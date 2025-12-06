@@ -1,10 +1,17 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
-import { Card, CardContent } from "@/components/ui/card";
+import { useAuth } from "@/contexts/AuthContext";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { contractsService } from "@/services/supabaseService";
+import { supabase } from "@/config/supabase";
+import { toast } from "sonner";
+import { Download, Upload, CheckCircle } from "lucide-react";
+import { format } from "date-fns";
 import {
   User,
   Users,
@@ -23,6 +30,7 @@ import {
   Shield,
   Scale,
   Monitor,
+  FileText,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -43,48 +51,59 @@ import SpeakersSection from "../components/partnerhub/SpeakersSection";
 import PitchJudgeSection from "../components/partnerhub/PitchJudgeSection";
 import SEFFYJudgeSection from "../components/partnerhub/SEFFYJudgeSection";
 import DigitalDisplaySection from "../components/partnerhub/DigitalDisplaySection";
+import DeliverablesSection from "../components/partnerhub/DeliverablesSection";
 
 export default function PartnerHub() {
   const [activeTab, setActiveTab] = useState("profile");
   const location = useLocation();
-
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me(),
-  });
+  const { user, partner } = useAuth();
 
   const urlParams = new URLSearchParams(location.search);
-  const viewAsEmail = urlParams.get('viewAs');
+  const viewAsPartnerId = urlParams.get('viewAs');
+  const currentPartnerId = viewAsPartnerId || partner?.id;
   
-  const effectivePartnerEmail = viewAsEmail || user?.email;
-  const isAdminGlobalView = (user?.role === 'admin' || user?.is_super_admin) && !viewAsEmail;
+  // For VIP section, we'll pass partner email from user context
+  const effectivePartnerEmail = user?.email || user?.partner_user?.email || '';
+  const isAdminGlobalView = (user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin) && !viewAsPartnerId;
 
-  const { data: profile } = useQuery({
-    queryKey: ['partnerProfile', effectivePartnerEmail],
+  // Fetch partner data for allocations
+  const { data: currentPartner } = useQuery({
+    queryKey: ['partner', currentPartnerId],
     queryFn: async () => {
-      const profiles = await base44.entities.PartnerProfile.filter({ 
-        partner_email: effectivePartnerEmail 
-      });
-      return profiles[0] || null;
+      if (!currentPartnerId) return null;
+      try {
+        const { partnersService } = await import('@/services/supabaseService');
+        return await partnersService.getById(currentPartnerId);
+      } catch (error) {
+        console.error('Error fetching partner:', error);
+        return partner;
+      }
     },
-    enabled: !!effectivePartnerEmail && !isAdminGlobalView,
+    enabled: !!currentPartnerId && !isAdminGlobalView,
+    initialData: partner,
   });
 
-  const isAdmin = user?.role === 'admin' || user?.is_super_admin;
-  const visibleHubSections = profile?.visible_hub_sections || [];
+  const isAdmin = user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin;
+  const visibleHubSections = currentPartner?.visible_hub_sections || [];
   
   const hasSection = (section) => {
     if (isAdmin) return true;
     
-    // Special handling for pitch_judge and seffy_judge based on profile flags
+    // Special handling for pitch_judge and seffy_judge based on partner flags
+    // Note: These flags would need to be added to partners table if needed
     if (section === 'pitch_judge') {
-      return profile?.show_pitch_competition === true;
+      return currentPartner?.show_pitch_competition === true;
     }
     if (section === 'seffy_judge') {
-      return profile?.show_seffy_awards === true;
+      return currentPartner?.show_seffy_awards === true;
     }
     
-    if (!profile || visibleHubSections.length === 0) return true;
+    // Deliverables section should always be visible (it uses currentPartnerId from AuthContext)
+    if (section === 'deliverables') {
+      return true;
+    }
+    
+    if (!currentPartner || visibleHubSections.length === 0) return true;
     return visibleHubSections.includes(section);
   };
 
@@ -202,6 +221,20 @@ export default function PartnerHub() {
       section: "digital_displays",
       gradient: "from-cyan-500 to-blue-600"
     },
+    { 
+      id: "deliverables", 
+      label: "Deliverables", 
+      icon: FileText, 
+      section: "deliverables",
+      gradient: "from-orange-500 to-amber-600"
+    },
+    { 
+      id: "contracts", 
+      label: "Contracts", 
+      icon: Scale, 
+      section: "contracts",
+      gradient: "from-indigo-500 to-blue-600"
+    },
   ];
 
   const tabs = allTabs.filter(tab => hasSection(tab.section));
@@ -244,13 +277,13 @@ export default function PartnerHub() {
                   <div className="flex items-center gap-4">
                     <div>
                       <p className="text-xs text-orange-100 font-semibold uppercase tracking-wider mb-2">
-                        {viewAsEmail ? 'Viewing As' : 'Your Company'}
+                        {viewAsPartnerId ? 'Viewing As' : 'Your Company'}
                       </p>
                       <p className="font-bold text-2xl text-white">{user.company_name}</p>
                     </div>
-                    {profile?.package_tier && (
+                    {currentPartner?.tier && (
                       <Badge className="bg-white text-orange-600 px-5 py-2 text-base font-bold shadow-lg">
-                        {profile.package_tier}
+                        {currentPartner.tier}
                       </Badge>
                     )}
                   </div>
@@ -355,6 +388,7 @@ export default function PartnerHub() {
                           {activeTabData.id === 'badges' && 'Team badge registration'}
                           {activeTabData.id === 'vipbox' && 'VIP box shipping tracker'}
                           {activeTabData.id === 'digital_displays' && 'Manage digital display content'}
+                          {activeTabData.id === 'deliverables' && 'Required deliverables and submission status'}
                         </p>
                       </div>
                     </div>
@@ -376,7 +410,7 @@ export default function PartnerHub() {
                         </CardContent>
                       </Card>
                     ) : (
-                      <ProfileSection user={user} profile={profile} isAdmin={isAdmin} />
+                      <ProfileSection user={user} profile={currentPartner} isAdmin={isAdmin} />
                     )}
                   </TabsContent>
                 )}
@@ -457,7 +491,7 @@ export default function PartnerHub() {
                       partnerEmail={effectivePartnerEmail} 
                       isAdmin={isAdmin}
                       showAllPartners={isAdminGlobalView}
-                      profile={profile}
+                      profile={currentPartner}
                     />
                   </TabsContent>
                 )}
@@ -533,11 +567,190 @@ export default function PartnerHub() {
                     />
                   </TabsContent>
                 )}
+
+                {hasSection("deliverables") && (
+                  <TabsContent value="deliverables" className="mt-0">
+                    <DeliverablesSection />
+                  </TabsContent>
+                )}
+
+                {hasSection("contracts") && (
+                  <TabsContent value="contracts" className="mt-0">
+                    <ContractsHubSection 
+                      partnerId={currentPartnerId}
+                      isAdmin={isAdmin}
+                    />
+                  </TabsContent>
+                )}
               </div>
             </Tabs>
           </Card>
         </motion.div>
       </div>
+    </div>
+  );
+}
+
+// Contracts Hub Section Component
+function ContractsHubSection({ partnerId, isAdmin }) {
+  const [selectedContract, setSelectedContract] = React.useState(null);
+  const [showUpload, setShowUpload] = React.useState(false);
+  const queryClient = useQueryClient();
+
+  const { data: contracts = [], isLoading } = useQuery({
+    queryKey: ['contracts', partnerId],
+    queryFn: () => contractsService.getByPartnerId(partnerId),
+    enabled: !!partnerId,
+  });
+
+  const uploadSignedMutation = useMutation({
+    mutationFn: async ({ contractId, file }) => {
+      const filePath = `contracts/${partnerId}/${contractId}/${Date.now()}_${file.name}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('public')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from('public')
+        .getPublicUrl(filePath);
+
+      return contractsService.uploadSigned(contractId, urlData.publicUrl);
+    },
+    onSuccess: () => {
+      toast.success('Signed contract uploaded successfully');
+      queryClient.invalidateQueries({ queryKey: ['contracts', partnerId] });
+      setShowUpload(false);
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Failed to upload signed contract');
+    }
+  });
+
+  const getStatusBadge = (status) => {
+    const configs = {
+      draft: { color: 'bg-gray-100 text-gray-800', label: 'Draft' },
+      sent: { color: 'bg-blue-100 text-blue-800', label: 'Sent' },
+      signed: { color: 'bg-green-100 text-green-800', label: 'Signed' },
+      approved: { color: 'bg-purple-100 text-purple-800', label: 'Approved' },
+      rejected: { color: 'bg-red-100 text-red-800', label: 'Rejected' },
+    };
+    return configs[status] || configs.draft;
+  };
+
+  if (isLoading) {
+    return <div className="p-8 text-center">Loading contracts...</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {contracts.length === 0 ? (
+        <Card>
+          <CardContent className="p-12 text-center">
+            <FileText className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No Contracts</h3>
+            <p className="text-gray-500">You don't have any contracts yet.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {contracts.map((contract) => {
+            const statusConfig = getStatusBadge(contract.status);
+            return (
+              <Card key={contract.id} className="hover:shadow-md transition-shadow">
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle className="text-lg">{contract.title}</CardTitle>
+                      <div className="flex items-center gap-2 mt-2">
+                        <Badge variant="outline" className={statusConfig.color}>
+                          {statusConfig.label}
+                        </Badge>
+                        <Badge variant="outline">{contract.contract_type || 'Partnership'}</Badge>
+                        <span className="text-sm text-gray-500">
+                          {format(new Date(contract.created_at), 'MMM d, yyyy')}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      {contract.file_url_original && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(contract.file_url_original, '_blank')}
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          Download
+                        </Button>
+                      )}
+                      {contract.status === 'sent' && !contract.file_url_signed && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedContract(contract);
+                            setShowUpload(true);
+                          }}
+                        >
+                          <Upload className="w-4 h-4 mr-2" />
+                          Upload Signed
+                        </Button>
+                      )}
+                      {contract.file_url_signed && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(contract.file_url_signed, '_blank')}
+                        >
+                          <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                          View Signed
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardHeader>
+                {contract.notes && (
+                  <CardContent>
+                    <p className="text-sm text-gray-600">{contract.notes}</p>
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {showUpload && selectedContract && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Upload Signed Contract</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const fileInput = e.target.querySelector('input[type="file"]');
+                const file = fileInput?.files?.[0];
+                if (file) {
+                  uploadSignedMutation.mutate({ contractId: selectedContract.id, file });
+                }
+              }}
+              className="space-y-4"
+            >
+              <Input type="file" accept=".pdf,.doc,.docx" required />
+              <div className="flex gap-2">
+                <Button type="submit" disabled={uploadSignedMutation.isPending}>
+                  {uploadSignedMutation.isPending ? 'Uploading...' : 'Upload'}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowUpload(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

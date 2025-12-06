@@ -1,6 +1,6 @@
 
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+// TODO: Base44 removed - migrate to Supabase
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Search, Shield, UserCog, AlertCircle, Edit, Trash2, Plus, Mail } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
@@ -43,8 +44,19 @@ export default function SuperAdminPanel() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showCreateAdmin, setShowCreateAdmin] = useState(false);
-  
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { user: authUser } = useAuth();
   const queryClient = useQueryClient();
+
+  // Check for impersonation and redirect if needed
+  useEffect(() => {
+    const urlParams = new URLSearchParams(location.search);
+    const viewAsPartnerId = urlParams.get('viewAs');
+    if (viewAsPartnerId) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [location.search, navigate]);
 
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
@@ -200,12 +212,17 @@ export default function SuperAdminPanel() {
     }
   });
 
-  if (!user?.is_super_admin) {
+  // Check if user is superadmin (role === 'sef_admin')
+  // Use authUser from useAuth hook, fallback to query user
+  const currentUser = authUser || user;
+  const isSuperAdmin = currentUser?.role === 'sef_admin';
+  
+  if (!isSuperAdmin) {
     return (
       <div className="p-8 text-center">
         <AlertCircle className="w-16 h-16 mx-auto text-red-500 mb-4" />
         <h2 className="text-2xl font-bold mb-2">Access Denied</h2>
-        <p className="text-gray-600">Super Admin access required</p>
+        <p className="text-gray-600">Superadmin access required. Only users with superadmin role can access Admin Command Center.</p>
       </div>
     );
   }
@@ -252,7 +269,7 @@ export default function SuperAdminPanel() {
       >
         <div className="flex justify-between items-start mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Super Admin Panel</h1>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Command Center</h1>
             <p className="text-gray-600">Manage admin users and permissions</p>
           </div>
           <Button
@@ -265,7 +282,24 @@ export default function SuperAdminPanel() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <Card 
+            className="border-orange-100 hover:shadow-lg transition-shadow cursor-pointer" 
+            onClick={() => navigate('/admin/users')}
+          >
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">User Management</p>
+                  <p className="text-2xl font-bold text-orange-600">
+                    {allUsers.length}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Total Users</p>
+                </div>
+                <UserCog className="w-12 h-12 text-orange-400" />
+              </div>
+            </CardContent>
+          </Card>
           <Card className="border-purple-100">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
@@ -333,7 +367,7 @@ export default function SuperAdminPanel() {
         {superAdminUsers.length > 0 && (
           <Card className="mb-6 border-purple-100 shadow-md">
             <CardHeader>
-              <CardTitle>Super Admin Users ({superAdminUsers.length})</CardTitle>
+              <CardTitle>Superadmin Users ({superAdminUsers.length})</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">

@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Megaphone, Mail, Phone, FileText, Download, UserCircle, RefreshCcw, MessageSquare, ExternalLink, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+// TODO: Base44 removed - migrate to Supabase
 import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
 

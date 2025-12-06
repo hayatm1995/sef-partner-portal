@@ -1,7 +1,9 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+// TODO: Migrate Contracts to Supabase contracts table when available
+// import { contractsService } from "@/services/supabaseService";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,32 +34,37 @@ export default function Contracts() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const location = useLocation();
-
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me(),
-  });
+  const { user, partner } = useAuth();
 
   const urlParams = new URLSearchParams(location.search);
-  const viewAsEmail = urlParams.get('viewAs');
-  const effectiveEmail = viewAsEmail || user?.email;
+  const viewAsPartnerId = urlParams.get('viewAs');
+  const currentPartnerId = viewAsPartnerId || partner?.id;
   const isAdmin = user?.role === 'admin' || user?.is_super_admin;
-  const isAdminGlobalView = isAdmin && !viewAsEmail;
+  const isAdminGlobalView = isAdmin && !viewAsPartnerId;
 
+  const effectiveEmail = user?.email || partner?.email;
+  
+  // Fetch contracts from Supabase
   const { data: contracts = [], isLoading } = useQuery({
-    queryKey: ['contracts', effectiveEmail, isAdminGlobalView],
+    queryKey: ['contracts', currentPartnerId, isAdminGlobalView],
     queryFn: async () => {
+      const { contractsService } = await import('@/services/supabaseService');
       if (isAdminGlobalView) {
-        return base44.entities.Contract.list('-created_date');
+        return contractsService.getAll();
+      } else if (currentPartnerId) {
+        return contractsService.getByPartnerId(currentPartnerId);
       }
-      return base44.entities.Contract.filter({ partner_email: effectiveEmail }, '-created_date');
+      return [];
     },
-    enabled: !!user,
+    enabled: !!user && !!currentPartnerId,
   });
 
   const { data: allPartners = [] } = useQuery({
     queryKey: ['allPartners'],
-    queryFn: () => base44.entities.User.list(),
+    queryFn: async () => {
+      const { partnersService } = await import('@/services/supabaseService');
+      return partnersService.getAll();
+    },
     enabled: isAdmin,
   });
 

@@ -1,7 +1,9 @@
 
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
+import { config } from "@/config";
+// TODO: Email templates migration to Supabase pending
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,55 +24,37 @@ export default function EmailTemplates() {
 
   const queryClient = useQueryClient();
 
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me(),
-  });
+  const { user } = useAuth();
 
+  // TODO: Email templates migration to Supabase pending
   const { data: templates = [] } = useQuery({
     queryKey: ['emailTemplates'],
-    queryFn: () => base44.entities.EmailTemplate.list(),
-    enabled: user?.role === 'admin',
+    queryFn: async () => {
+      // Return empty array until Supabase migration is complete
+      console.warn('Email templates migration to Supabase pending');
+      return [];
+    },
+    enabled: user?.role === 'admin' || user?.is_super_admin,
   });
 
   const { data: currentTemplate } = useQuery({
     queryKey: ['emailTemplate', selectedTemplate],
     queryFn: async () => {
-      const results = await base44.entities.EmailTemplate.filter({ 
-        template_name: selectedTemplate 
-      });
-      const template = results[0] || null;
-      if (template) {
-        setFormData({
-          subject: template.subject,
-          body: template.body
-        });
-      } else {
-        const defaultTemplate = defaultTemplates[selectedTemplate];
-        if (defaultTemplate) {
-          setFormData(defaultTemplate);
-        }
+      // Return null until Supabase migration is complete
+      const defaultTemplate = defaultTemplates[selectedTemplate];
+      if (defaultTemplate) {
+        setFormData(defaultTemplate);
       }
-      return template;
+      return null;
     },
-    enabled: user?.role === 'admin' && !!selectedTemplate,
+    enabled: (user?.role === 'admin' || user?.is_super_admin) && !!selectedTemplate,
   });
 
   const saveTemplateMutation = useMutation({
     mutationFn: async (data) => {
-      if (currentTemplate) {
-        return base44.entities.EmailTemplate.update(currentTemplate.id, {
-          ...data,
-          last_modified_by: user.email
-        });
-      } else {
-        return base44.entities.EmailTemplate.create({
-          template_name: selectedTemplate,
-          ...data,
-          variables: availableVariables[selectedTemplate] || [],
-          last_modified_by: user.email
-        });
-      }
+      // TODO: Implement Supabase email templates service
+      console.warn('Email template save - Supabase migration pending');
+      throw new Error('Email templates migration to Supabase pending');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['emailTemplates'] });
@@ -210,7 +194,7 @@ The SEF Team`
     let preview = formData.body;
     const sampleData = {
       "{{partner_name}}": "John Smith",
-      "{{login_url}}": "https://sef-portal.base44.app/login",
+      "{{login_url}}": config.appUrl,
       "{{account_manager_name}}": "Sarah Johnson",
       "{{account_manager_email}}": "sarah@sheraa.ae",
       "{{event_date}}": "February 10-12, 2025",
@@ -221,7 +205,7 @@ The SEF Team`
       "{{deliverable_title}}": "Company Logo",
       "{{reminder_title}}": "Upload Required Documents",
       "{{due_date}}": "January 15, 2025",
-      "{{action_url}}": "https://sef-portal.base44.app/deliverables"
+      "{{action_url}}": `${config.appUrl}/Deliverables`
     };
 
     Object.entries(sampleData).forEach(([key, value]) => {

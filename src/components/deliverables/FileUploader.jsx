@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/config/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card } from "@/components/ui/card";
 import { Upload, File, X, Loader2, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 
 export default function FileUploader({ onClose, onUpload, isLoading }) {
   const [file, setFile] = useState(null);
@@ -15,7 +16,7 @@ export default function FileUploader({ onClose, onUpload, isLoading }) {
   const [uploadError, setUploadError] = useState(null);
   const [formData, setFormData] = useState({
     title: "",
-    type: "other",
+    type: "Document",
     notes: ""
   });
 
@@ -67,7 +68,29 @@ export default function FileUploader({ onClose, onUpload, isLoading }) {
 
     try {
       setUploadError(null);
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      
+      // Upload file to Supabase Storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `deliverables/${fileName}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('deliverables')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // Get public URL for the uploaded file
+      const { data: urlData } = supabase.storage
+        .from('deliverables')
+        .getPublicUrl(filePath);
+
+      const file_url = urlData.publicUrl;
       
       onUpload({
         ...formData,
@@ -77,6 +100,7 @@ export default function FileUploader({ onClose, onUpload, isLoading }) {
     } catch (error) {
       console.error("Upload failed:", error);
       setUploadError(error.message || "Upload failed. Please try again.");
+      toast.error(error.message || "Upload failed. Please try again.");
     }
   };
 
@@ -192,12 +216,9 @@ export default function FileUploader({ onClose, onUpload, isLoading }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="contract">Contract</SelectItem>
-                  <SelectItem value="media_asset">Media Asset</SelectItem>
-                  <SelectItem value="logo">Logo</SelectItem>
-                  <SelectItem value="presentation">Presentation</SelectItem>
-                  <SelectItem value="floorplan">Floorplan</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
+                  <SelectItem value="Media Asset">Media Asset</SelectItem>
+                  <SelectItem value="PR Requirement">PR Requirement</SelectItem>
+                  <SelectItem value="Document">Document</SelectItem>
                 </SelectContent>
               </Select>
             </div>

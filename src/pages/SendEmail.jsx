@@ -1,6 +1,8 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
+import { partnersService, activityLogService } from "@/services/supabaseService";
+// TODO: Email sending and templates migration to Supabase pending
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,8 +35,9 @@ import { Mail, Send, Users, Plus, Minus, AlertCircle, Eye, Clock, CheckCircle, F
 import { motion } from "framer-motion";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { config } from "@/config";
 
-const APP_URL = "https://partners.sharjahef.com";
+const APP_URL = config.appUrl;
 
 export default function SendEmail() {
   const [selectedPartners, setSelectedPartners] = useState([]);
@@ -48,38 +51,36 @@ export default function SendEmail() {
 
   const queryClient = useQueryClient();
 
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me(),
-  });
+  const { user } = useAuth();
 
   const { data: allPartners = [] } = useQuery({
     queryKey: ['allPartnersForEmail'],
     queryFn: async () => {
-      const users = await base44.entities.User.list();
-      return users.filter(u => u.role !== 'admin' && !u.is_super_admin);
+      return partnersService.getAll();
     },
     enabled: !!user && (user.role === 'admin' || user.is_super_admin),
   });
 
-  const { data: profiles = [] } = useQuery({
-    queryKey: ['partnerProfiles'],
-    queryFn: () => base44.entities.PartnerProfile.list(),
-    enabled: !!user && (user.role === 'admin' || user.is_super_admin),
-  });
+  // TODO: Partner profiles migration to Supabase pending
+  const profiles = [];
 
+  // TODO: Email templates migration to Supabase pending
   const { data: emailTemplates = [] } = useQuery({
     queryKey: ['emailTemplates'],
-    queryFn: () => base44.entities.EmailTemplate.filter({ is_active: true }),
+    queryFn: async () => {
+      console.warn('Email templates migration to Supabase pending');
+      return [];
+    },
     enabled: !!user && (user.role === 'admin' || user.is_super_admin),
   });
 
-  // Get recent email activity
+  // Get recent email activity from activity logs
   const { data: emailHistory = [] } = useQuery({
     queryKey: ['emailHistory'],
     queryFn: async () => {
-      const activities = await base44.entities.ActivityLog.list('-created_date', 50);
-      return activities.filter(a => a.activity_type === 'email_sent');
+      // TODO: Add filtering by activity_type to activityLogService
+      const activities = await activityLogService.getAll ? await activityLogService.getAll() : [];
+      return activities.filter(a => a.activity_type === 'email_sent').slice(0, 50);
     },
     enabled: !!user && (user.role === 'admin' || user.is_super_admin),
   });
@@ -140,27 +141,32 @@ export default function SendEmail() {
             </div>
           `;
 
-          await base44.integrations.Core.SendEmail({
-            from_name: 'SEF Team',
-            to: partner.email,
-            subject: subject,
-            body: htmlBody
-          });
+          // TODO: Implement Supabase email sending (via Supabase Edge Functions or external service)
+          console.warn('Email sending - Supabase migration pending');
+          // Placeholder: await sendEmailViaSupabase({
+          //   from_name: 'SEF Team',
+          //   to: partner.email,
+          //   subject: subject,
+          //   body: htmlBody
+          // });
 
           // Log the email
-          await base44.entities.ActivityLog.create({
-            activity_type: 'email_sent',
-            user_email: user.email,
-            target_user_email: partner.email,
-            description: `Email sent: "${subject}"`,
-            metadata: {
-              subject: subject,
-              partner_name: partner.full_name,
-              company_name: partner.company_name,
-              email_type: 'bulk_email',
-              portal_url: APP_URL // Added this line
-            }
-          });
+          if (user?.partner_user?.id && user?.partner_id) {
+            await activityLogService.create({
+              activity_type: 'email_sent',
+              user_id: user.partner_user.id,
+              partner_id: user.partner_id,
+              description: `Email sent: "${subject}" to ${partner.email}`,
+              metadata: {
+                subject: subject,
+                target_email: partner.email,
+                partner_name: partner.full_name || partner.name,
+                company_name: partner.company_name || partner.name,
+                email_type: 'bulk_email',
+                portal_url: APP_URL
+              }
+            });
+          }
 
           results.push({ email: partner.email, success: true });
         } catch (error) {

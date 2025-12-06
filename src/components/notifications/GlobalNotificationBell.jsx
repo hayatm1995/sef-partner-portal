@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { notificationsService } from "@/services/supabaseService";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -16,22 +16,20 @@ import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 
-export default function GlobalNotificationBell({ partnerEmail }) {
+export default function GlobalNotificationBell({ partnerId, partnerEmail }) {
   const [isOpen, setIsOpen] = useState(false);
   const [lastNotificationCount, setLastNotificationCount] = useState(0);
   const queryClient = useQueryClient();
 
   const { data: notifications = [] } = useQuery({
-    queryKey: ['unreadNotifications', partnerEmail],
+    queryKey: ['unreadNotifications', partnerId],
     queryFn: async () => {
-      const allNotifications = await base44.entities.StatusUpdate.filter(
-        { partner_email: partnerEmail, read: false },
-        '-created_date',
-        20
-      );
-      return allNotifications;
+      if (partnerId) {
+        return notificationsService.getByPartnerId(partnerId, true); // unread only
+      }
+      return [];
     },
-    enabled: !!partnerEmail,
+    enabled: !!partnerId,
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
@@ -80,7 +78,7 @@ export default function GlobalNotificationBell({ partnerEmail }) {
   const markAsRead = async (notificationId, e) => {
     e.preventDefault();
     e.stopPropagation();
-    await base44.entities.StatusUpdate.update(notificationId, { read: true });
+    await notificationsService.markAsRead(notificationId);
     queryClient.invalidateQueries({ queryKey: ['unreadNotifications'] });
     queryClient.invalidateQueries({ queryKey: ['notifications'] });
   };

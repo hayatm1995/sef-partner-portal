@@ -1,6 +1,8 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { activityLogService } from "@/services/supabaseService";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
+import { nominationsService } from "@/services/supabaseService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,51 +18,56 @@ export default function Nominations() {
   const [selectedType, setSelectedType] = useState(null);
   const queryClient = useQueryClient();
   const location = useLocation();
-
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me(),
-  });
+  const { user, partner } = useAuth();
 
   const isAdmin = user?.role === 'admin' || user?.is_super_admin;
 
   // Get viewAs parameter for admin viewing as partner
   const urlParams = new URLSearchParams(location.search);
-  const viewAsEmail = urlParams.get('viewAs');
-  const effectiveEmail = viewAsEmail || user?.email;
+  const viewAsPartnerId = urlParams.get('viewAs');
+  const currentPartnerId = viewAsPartnerId || partner?.id;
 
   const { data: nominations = [], isLoading } = useQuery({
-    queryKey: ['nominations', effectiveEmail, isAdmin, viewAsEmail],
+    queryKey: ['nominations', currentPartnerId, isAdmin, viewAsPartnerId],
     queryFn: async () => {
-      if (isAdmin && !viewAsEmail) {
-        // Admin viewing all nominations INCLUDING archived ones
-        return base44.entities.Nomination.list('-created_date');
-      } else {
-        // Partner viewing their own OR admin viewing as specific partner - EXCLUDE archived
-        const allNominations = await base44.entities.Nomination.filter({ 
-          partner_email: effectiveEmail 
-        }, '-created_date');
-        return allNominations.filter(n => n.status !== 'archived');
+      if (isAdmin && !viewAsPartnerId) {
+        // Admin viewing all nominations
+        return nominationsService.getAll();
+      } else if (currentPartnerId) {
+        // Partner viewing their own OR admin viewing as specific partner
+        return nominationsService.getAll(currentPartnerId);
       }
+      return [];
     },
-    enabled: !!user,
+    enabled: !!user && (isAdmin || !!currentPartnerId),
   });
 
   const createNominationMutation = useMutation({
-    mutationFn: (data) => base44.entities.Nomination.create(data),
+    mutationFn: async (data) => {
+      const nominationData = {
+        ...data,
+        partner_id: currentPartnerId,
+        category: data.type || data.category,
+        status: 'Submitted',
+      };
+      return nominationsService.create(nominationData);
+    },
     onSuccess: async (newNomination) => {
       // Log the activity
       try {
-        await base44.entities.ActivityLog.create({
-          activity_type: "nomination_submitted",
-          user_email: user.email,
-          description: `Nomination submitted: "${newNomination.nominee_name}" (${newNomination.nomination_type})`,
-          metadata: {
-            nomination_id: newNomination.id,
-            nomination_type: newNomination.nomination_type,
-            nominee_name: newNomination.nominee_name
-          }
-        });
+        if (user?.partner_user?.id && user?.partner_id) {
+          await activityLogService.create({
+            activity_type: "nomination_submitted",
+            user_id: user.partner_user.id,
+            partner_id: user.partner_id,
+            description: `Nomination submitted: "${newNomination.nominee_name}" (${newNomination.nomination_type})`,
+            metadata: {
+              nomination_id: newNomination.id,
+              nomination_type: newNomination.nomination_type,
+              nominee_name: newNomination.nominee_name
+            }
+          });
+        }
       } catch (error) {
         console.error("Failed to log activity:", error);
       }

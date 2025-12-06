@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { activityLogService } from "@/services/supabaseService";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,8 +27,9 @@ import {
 import { Plus, Mail, Trash2, UserPlus, Loader2, CheckCircle, XCircle, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import { config } from "@/config";
 
-const APP_URL = "https://partners.sharjahef.com";
+const APP_URL = config.appUrl;
 
 export default function TeamMembersManager({ partnerEmail, partnerName, showAllPartners }) {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -44,7 +45,7 @@ export default function TeamMembersManager({ partnerEmail, partnerName, showAllP
 
   const { data: currentUser } = useQuery({
     queryKey: ['currentUser'],
-    queryFn: () => base44.auth.currentUser(),
+    queryFn: () => base44.auth.me(),
     staleTime: Infinity,
   });
 

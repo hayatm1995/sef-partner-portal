@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
+import { activityLogService, deliverablesService, nominationsService } from "@/services/supabaseService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -18,29 +19,45 @@ import { format } from "date-fns";
 export default function ActivityLog() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
+  const { user, partner } = useAuth();
 
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me(),
+  // Fetch activity logs from Supabase
+  const { data: activityLogs = [] } = useQuery({
+    queryKey: ['activityLogs', user?.partner_id],
+    queryFn: async () => {
+      if (user?.partner_id) {
+        // TODO: Add getByPartnerId method to activityLogService if needed
+        return activityLogService.getAll ? await activityLogService.getAll() : [];
+      }
+      return [];
+    },
+    enabled: !!user?.partner_id,
   });
 
   const { data: deliverables = [] } = useQuery({
-    queryKey: ['userDeliverables', user?.email],
-    queryFn: () => base44.entities.Deliverable.list('-created_date'),
-    enabled: !!user,
+    queryKey: ['userDeliverables', user?.partner_id],
+    queryFn: async () => {
+      if (user?.partner_id) {
+        return deliverablesService.getAll(user.partner_id);
+      }
+      return [];
+    },
+    enabled: !!user?.partner_id,
   });
 
   const { data: nominations = [] } = useQuery({
-    queryKey: ['userNominations', user?.email],
-    queryFn: () => base44.entities.Nomination.filter({ partner_email: user?.email }, '-created_date'),
-    enabled: !!user,
+    queryKey: ['userNominations', user?.partner_id],
+    queryFn: async () => {
+      if (user?.partner_id) {
+        return nominationsService.getAll(user.partner_id);
+      }
+      return [];
+    },
+    enabled: !!user?.partner_id,
   });
 
-  const { data: bookings = [] } = useQuery({
-    queryKey: ['userBookings', user?.email],
-    queryFn: () => base44.entities.CalendarBooking.filter({ partner_email: user?.email }, '-created_date'),
-    enabled: !!user,
-  });
+  // TODO: Calendar bookings migration to Supabase pending
+  const bookings = [];
 
   // Combine all activities
   const activities = [

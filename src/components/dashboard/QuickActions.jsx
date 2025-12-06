@@ -24,13 +24,6 @@ export default function QuickActions({ isAdmin }) {
       url: createPageUrl("ManagePartners")
     },
     {
-      title: "View Analytics",
-      description: "Partner engagement data",
-      icon: BarChart3,
-      gradient: "from-teal-500 to-cyan-600",
-      url: createPageUrl("AdminAnalytics")
-    },
-    {
       title: "Set Requirements",
       description: "Configure requirements",
       icon: ClipboardList,

@@ -5,12 +5,12 @@ import { Award, Mail, Phone, Calendar, Briefcase, Users, Trophy } from "lucide-r
 import { format } from "date-fns";
 import { motion } from "framer-motion";
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client'; // Changed import path
+import { partnersService } from '@/services/supabaseService';
 
 export default function NominationCard({ nomination, isAdmin }) {
   const { data: allPartners = [] } = useQuery({
     queryKey: ['allPartners'],
-    queryFn: () => base44.entities.User.list(),
+    queryFn: () => partnersService.getAll(),
     enabled: isAdmin,
   });
 

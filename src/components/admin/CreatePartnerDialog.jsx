@@ -1,6 +1,6 @@
 
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+// TODO: Base44 removed - migrate to Supabase
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import {
   Dialog,
@@ -14,8 +14,9 @@ import { Label } from "@/components/ui/label";
 import { Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
+import { config } from "@/config";
 
-const APP_URL = "https://partners.sharjahef.com";
+const APP_URL = config.appUrl;
 
 export default function CreatePartnerDialog({ onClose }) {
   const { data: currentUser } = useQuery({

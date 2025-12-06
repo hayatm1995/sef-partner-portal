@@ -1,6 +1,10 @@
-import { base44 } from "@/api/base44Client";
+// src/components/notifications/VIPNotificationHelper.jsx
+import { supabase } from '@/config/supabase';
+import { notificationsService } from '@/services/supabaseService';
 
-// Notify admins when a new guest list is submitted
+/**
+ * Notify admins when a new guest list is submitted
+ */
 export async function notifyAdminsGuestListSubmitted(partnerEmail, eventType, inviteCount) {
   const eventNames = {
     opening_ceremony: "Opening Ceremony",
@@ -9,20 +13,46 @@ export async function notifyAdminsGuestListSubmitted(partnerEmail, eventType, in
   };
   const eventName = eventNames[eventType] || eventType;
 
-  // Get all admin users
-  const allUsers = await base44.entities.User.list();
-  const admins = allUsers.filter(u => u.role === 'admin' || u.is_super_admin);
+  try {
+    // Get all admin users from partner_users table
+    const { data: allPartnerUsers, error: usersError } = await supabase
+      .from('partner_users')
+      .select('id, partner_id, email, role')
+      .in('role', ['admin', 'sef_admin']);
 
-  // Create notification for each admin
-  await Promise.all(admins.map(admin => 
-    base44.entities.StatusUpdate.create({
-      partner_email: admin.email,
-      title: "New Guest List Submitted",
-      message: `${partnerEmail} submitted a guest list for ${eventName} with ${inviteCount} invites. Please review and process.`,
-      type: "action_required",
-      read: false
-    })
-  ));
+    if (usersError) {
+      console.error('Error fetching admin users:', usersError);
+      return;
+    }
+
+    if (!allPartnerUsers || allPartnerUsers.length === 0) {
+      console.warn('No admin users found');
+      return;
+    }
+
+    // Create notification for each admin's partner
+    const notificationPromises = allPartnerUsers.map(async (admin) => {
+      if (!admin.partner_id) {
+        console.warn(`Admin ${admin.email} has no partner_id`);
+        return;
+      }
+
+      try {
+        await notificationsService.create({
+          partner_id: admin.partner_id,
+          type: 'action_required',
+          title: "New Guest List Submitted",
+          message: `${partnerEmail} submitted a guest list for ${eventName} with ${inviteCount} invite${inviteCount !== 1 ? 's' : ''}. Please review and process.`,
+        });
+      } catch (error) {
+        console.error(`Error creating notification for admin ${admin.email}:`, error);
+      }
+    });
+
+    await Promise.all(notificationPromises);
+  } catch (error) {
+    console.error('Error in notifyAdminsGuestListSubmitted:', error);
+  }
 }
 
 // Notify partner when their invitation allocation is running low (< 20% remaining)
@@ -45,6 +75,19 @@ export async function checkAndNotifyLowAllocation(partnerEmail, profile, invitat
     }
   ];
 
+  // Get partner_id for the partner email
+  const { data: partnerData } = await supabase
+    .from('partners')
+    .select('id')
+    .eq('email', partnerEmail)
+    .single();
+
+  const partnerId = partnerData?.id;
+  if (!partnerId) {
+    console.warn('Partner not found for email:', partnerEmail);
+    return;
+  }
+
   for (const alloc of allocations) {
     if (alloc.allocation === 0) continue;
 
@@ -58,23 +101,24 @@ export async function checkAndNotifyLowAllocation(partnerEmail, profile, invitat
     // Notify if less than 20% remaining and more than 0
     if (percentRemaining <= 20 && remaining > 0) {
       // Check if we already sent this notification recently (within last 24 hours)
-      const recentNotifications = await base44.entities.StatusUpdate.filter({
-        partner_email: partnerEmail
-      });
-      
-      const alreadyNotified = recentNotifications.some(n => 
-        n.title.includes(`${alloc.name} Allocation Running Low`) &&
-        new Date(n.created_date) > new Date(Date.now() - 24 * 60 * 60 * 1000)
-      );
+      try {
+        const recentNotifications = await notificationsService.getByPartnerId(partnerId);
+        
+        const alreadyNotified = recentNotifications.some(n => 
+          n.title?.includes(`${alloc.name} Allocation Running Low`) &&
+          new Date(n.created_at) > new Date(Date.now() - 24 * 60 * 60 * 1000)
+        );
 
-      if (!alreadyNotified) {
-        await base44.entities.StatusUpdate.create({
-          partner_email: partnerEmail,
-          title: `${alloc.name} Allocation Running Low`,
-          message: `You have only ${remaining} out of ${alloc.allocation} invites remaining for ${alloc.name}. Contact your account manager if you need additional allocation.`,
-          type: "warning",
-          read: false
-        });
+        if (!alreadyNotified) {
+          await notificationsService.create({
+            partner_id: partnerId,
+            type: 'warning',
+            title: `${alloc.name} Allocation Running Low`,
+            message: `You have only ${remaining} out of ${alloc.allocation} invites remaining for ${alloc.name}. Contact your account manager if you need additional allocation.`,
+          });
+        }
+      } catch (error) {
+        console.error('Error checking/creating low allocation notification:', error);
       }
     }
   }
@@ -97,13 +141,29 @@ export async function notifyPartnerStatusChange(partnerEmail, eventType, oldStat
   const message = statusMessages[newStatus] || `Your ${eventName} invitation status has been updated to ${newStatus}.`;
   const type = newStatus === 'confirmed' ? 'success' : 'info';
 
-  await base44.entities.StatusUpdate.create({
-    partner_email: partnerEmail,
-    title: `${eventName} Invitation ${newStatus === 'confirmed' ? 'Confirmed' : 'Status Updated'}`,
-    message,
-    type,
-    read: false
-  });
+  // Get partner_id for the partner email
+  const { data: partnerData } = await supabase
+    .from('partners')
+    .select('id')
+    .eq('email', partnerEmail)
+    .single();
+
+  const partnerId = partnerData?.id;
+  if (!partnerId) {
+    console.warn('Partner not found for email:', partnerEmail);
+    return;
+  }
+
+  try {
+    await notificationsService.create({
+      partner_id: partnerId,
+      type: type,
+      title: `${eventName} Invitation ${newStatus === 'confirmed' ? 'Confirmed' : 'Status Updated'}`,
+      message: message,
+    });
+  } catch (error) {
+    console.error('Error creating status change notification:', error);
+  }
 }
 
 // Notify partner about upcoming event (call this from a scheduled function or manually)
@@ -115,48 +175,58 @@ export async function notifyUpcomingEvent(partnerEmail, eventType, daysUntilEven
   };
   const eventName = eventNames[eventType] || eventType;
 
-  await base44.entities.StatusUpdate.create({
-    partner_email: partnerEmail,
-    title: `${eventName} Coming Up!`,
-    message: `Reminder: The ${eventName} is in ${daysUntilEvent} day${daysUntilEvent > 1 ? 's' : ''}. Make sure your guest list is finalized and your guests have received their invitations.`,
-    type: "info",
-    read: false
-  });
+  // Get partner_id for the partner email
+  const { data: partnerData } = await supabase
+    .from('partners')
+    .select('id')
+    .eq('email', partnerEmail)
+    .single();
+
+  const partnerId = partnerData?.id;
+  if (!partnerId) {
+    console.warn('Partner not found for email:', partnerEmail);
+    return;
+  }
+
+  try {
+    await notificationsService.create({
+      partner_id: partnerId,
+      type: 'info',
+      title: `${eventName} Coming Up!`,
+      message: `Reminder: The ${eventName} is in ${daysUntilEvent} day${daysUntilEvent > 1 ? 's' : ''}. Make sure your guest list is finalized and your guests have received their invitations.`,
+    });
+  } catch (error) {
+    console.error('Error creating upcoming event notification:', error);
+  }
 }
 
 // Update VIP invitation status and notify partner (for admin use)
+// TODO: Migrate VIP invitations to Supabase table when available
 export async function updateInvitationStatusWithNotification(invitationId, newStatus, partnerEmail, eventType) {
-  // Update the invitation
-  await base44.entities.VIPInvitation.update(invitationId, { status: newStatus });
-  
-  // Notify the partner
-  await notifyPartnerStatusChange(partnerEmail, eventType, null, newStatus);
-  
-  return true;
+  try {
+    // TODO: Update VIP invitation in Supabase when table is available
+    // await supabase.from('vip_invitations').update({ status: newStatus }).eq('id', invitationId);
+    console.warn('VIP invitation update - Supabase migration pending');
+    
+    // Notify the partner
+    await notifyPartnerStatusChange(partnerEmail, eventType, null, newStatus);
+    
+    return true;
+  } catch (error) {
+    console.error('Error updating invitation status:', error);
+    return false;
+  }
 }
 
 // Send email notification for important VIP events
+// TODO: Implement Supabase email sending (via Edge Functions or external service)
 export async function sendVIPEmailNotification(partnerEmail, subject, message) {
   try {
-    await base44.integrations.Core.SendEmail({
-      to: partnerEmail,
-      subject: `[SEF 2026] ${subject}`,
-      body: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background: linear-gradient(135deg, #f59e0b, #d97706); padding: 20px; text-align: center;">
-            <h1 style="color: white; margin: 0;">SEF 2026 - BELONG+</h1>
-          </div>
-          <div style="padding: 30px; background: #fff;">
-            ${message}
-          </div>
-          <div style="background: #f3f4f6; padding: 15px; text-align: center; font-size: 12px; color: #6b7280;">
-            <p>This is an automated notification from the SEF Partner Portal.</p>
-            <p>© 2026 Sharjah Entrepreneurship Festival</p>
-          </div>
-        </div>
-      `
-    });
-    return true;
+    // TODO: Implement Supabase email sending
+    console.warn('Email sending - Supabase migration pending');
+    // Placeholder: await sendEmailViaSupabase({ ... });
+    
+    return false; // Return false until email service is implemented
   } catch (error) {
     console.error("Failed to send email:", error);
     return false;
