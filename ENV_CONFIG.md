@@ -22,6 +22,9 @@ VITE_APP_URL=http://localhost:5173
 
 # Base44 App ID
 VITE_BASE44_APP_ID=68f50edf823231efaa8f1c55
+
+# OpenAI API Key (for Imagine Lab image generation and Social Media caption creation)
+VITE_OPENAI_API_KEY=your-openai-api-key
 ```
 
 ## Environment Variables
@@ -50,6 +53,15 @@ VITE_BASE44_APP_ID=68f50edf823231efaa8f1c55
 - **Default:** `68f50edf823231efaa8f1c55`
 - **When to change:** If you're using a different Base44 app
 
+### `VITE_OPENAI_API_KEY` ⚠️ **REQUIRED for AI Features**
+- **Purpose:** OpenAI API key for Imagine Lab image generation and Social Media caption creation
+- **Where to find:** https://platform.openai.com/api-keys
+- **Example:** `sk-proj-...`
+- **Required:** Yes (for Imagine Lab and Social Media Kit features)
+- **Features using this:**
+  - Imagine Lab: AI image generation (DALL-E)
+  - Social Media Kit: AI caption generation for social media posts
+
 ## Examples
 
 ### Development
@@ -58,6 +70,7 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 VITE_APP_URL=http://localhost:5173
 VITE_BASE44_APP_ID=68f50edf823231efaa8f1c55
+VITE_OPENAI_API_KEY=your-openai-api-key
 ```
 
 ### Production
@@ -66,6 +79,7 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 VITE_APP_URL=https://partners.sharjahef.com
 VITE_BASE44_APP_ID=68f50edf823231efaa8f1c55
+VITE_OPENAI_API_KEY=your-openai-api-key
 ```
 
 ## Important Notes
