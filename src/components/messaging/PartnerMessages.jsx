@@ -54,7 +54,7 @@ export default function PartnerMessages({ partnerId, deliverableId = null, onClo
           table: 'partner_messages',
           filter: deliverableId 
             ? `partner_id=eq.${partnerId} AND deliverable_id=eq.${deliverableId}`
-            : `partner_id=eq.${partnerId}${deliverableId ? '' : ' AND deliverable_id=is.null'}`,
+            : `partner_id=eq.${partnerId}`,
         },
         () => {
           queryClient.invalidateQueries({ queryKey });

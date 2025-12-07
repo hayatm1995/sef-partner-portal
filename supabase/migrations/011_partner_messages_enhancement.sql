@@ -36,11 +36,11 @@ SET sender_role = CASE
   WHEN EXISTS (
     SELECT 1 FROM public.partner_users pu 
     WHERE pu.auth_user_id = pm.sender_id 
-    AND pu.role IN ('admin', 'sef_admin', 'superadmin')
+    AND (pu.role IN ('admin', 'sef_admin', 'superadmin') OR pu.role = 'admin')
   ) THEN 'admin'
   ELSE 'partner'
 END
-WHERE sender_role IS NULL OR sender_role = 'partner';
+WHERE sender_role IS NULL;
 
 -- Create index for deliverable_id queries
 CREATE INDEX IF NOT EXISTS idx_partner_messages_deliverable_id ON public.partner_messages(deliverable_id);

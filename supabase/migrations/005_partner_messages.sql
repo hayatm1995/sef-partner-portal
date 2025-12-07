@@ -69,7 +69,7 @@ CREATE POLICY "Admins can view all messages"
     EXISTS (
       SELECT 1 FROM public.partner_users 
       WHERE auth_user_id = auth.uid() 
-      AND role IN ('admin', 'sef_admin')
+      AND role IN ('admin', 'sef_admin', 'superadmin')
     )
   );
 
@@ -81,7 +81,7 @@ CREATE POLICY "Admins can send messages"
     EXISTS (
       SELECT 1 FROM public.partner_users 
       WHERE auth_user_id = auth.uid() 
-      AND role IN ('admin', 'sef_admin')
+      AND role IN ('admin', 'sef_admin', 'superadmin')
     )
     AND sender_id = auth.uid()
   );
@@ -94,14 +94,14 @@ CREATE POLICY "Admins can update message read status"
     EXISTS (
       SELECT 1 FROM public.partner_users 
       WHERE auth_user_id = auth.uid() 
-      AND role IN ('admin', 'sef_admin')
+      AND role IN ('admin', 'sef_admin', 'superadmin')
     )
   )
   WITH CHECK (
     EXISTS (
       SELECT 1 FROM public.partner_users 
       WHERE auth_user_id = auth.uid() 
-      AND role IN ('admin', 'sef_admin')
+      AND role IN ('admin', 'sef_admin', 'superadmin')
     )
   );
 
