@@ -285,9 +285,16 @@ export default function Approvals() {
       // Log activity
       const deliverable = pendingDeliverables.find(d => d.id === deliverableId);
       if (deliverable && deliverable.partner_id) {
+        // Get partner_user id for user_id
+        const { data: partnerUser } = await supabase
+          .from('partner_users')
+          .select('id')
+          .eq('auth_user_id', user?.id)
+          .single();
+        
         await activityLogService.create({
           partner_id: deliverable.partner_id,
-          user_id: user?.id,
+          user_id: partnerUser?.id || null,
           activity_type: 'deliverable_revision_requested',
           description: `Revision requested for "${deliverable.name}": ${revisionComment}`,
           metadata: {
