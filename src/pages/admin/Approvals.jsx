@@ -47,13 +47,13 @@ export default function Approvals() {
   const [showActionDialog, setShowActionDialog] = useState(false);
 
   // Fetch all partners for name mapping
-  const { role, partnerId } = useAuth();
+  const { role: userRole, partnerId } = useAuth();
 
   const { data: allPartners = [] } = useQuery({
-    queryKey: ['allPartners', role, partnerId],
+    queryKey: ['allPartners', userRole, partnerId],
     queryFn: async () => {
       return partnersService.getAll({
-        role: role || undefined,
+        role: userRole || undefined,
         currentUserPartnerId: partnerId || undefined,
       });
     },
@@ -62,13 +62,13 @@ export default function Approvals() {
 
   // Fetch pending deliverables - check submissions with status 'submitted' or 'pending_review'
   const { data: pendingDeliverables = [], isLoading } = useQuery({
-    queryKey: ['pendingDeliverables', role, partnerId],
+    queryKey: ['pendingDeliverables', userRole, partnerId],
     queryFn: async () => {
       // Get all submissions with pending status
       const submissions = await partnerSubmissionsService.getAll();
       // Filter by role if admin
       let filteredSubmissions = submissions;
-      if (role === 'admin' && partnerId) {
+      if (userRole === 'admin' && partnerId) {
         filteredSubmissions = submissions.filter(s => s.partner_id === partnerId);
       }
       
@@ -81,7 +81,7 @@ export default function Approvals() {
       
       // Fetch deliverables (role-based filtering)
       const all = await deliverablesService.getAll({
-        role: role || undefined,
+        role: userRole || undefined,
         currentUserPartnerId: partnerId || undefined,
       });
       return all.filter(d => deliverableIds.includes(d.id));

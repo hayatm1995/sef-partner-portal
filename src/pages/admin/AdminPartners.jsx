@@ -57,14 +57,14 @@ export default function AdminPartners() {
     }
   }, [user, isAdmin, navigate]);
 
-  const { role, partnerId } = useAuth();
+  const { role: userRole, partnerId } = useAuth();
 
   // Fetch all partners (role-based filtering)
   const { data: partners = [], isLoading: partnersLoading } = useQuery({
-    queryKey: ['adminPartners', role, partnerId],
+    queryKey: ['adminPartners', userRole, partnerId],
     queryFn: async () => {
       return partnersService.getAll({
-        role: role || undefined,
+        role: userRole || undefined,
         currentUserPartnerId: partnerId || undefined,
       });
     },
@@ -73,7 +73,7 @@ export default function AdminPartners() {
 
   // Fetch all partner users to calculate stats (role-based filtering)
   const { data: allPartnerUsers = [] } = useQuery({
-    queryKey: ['allPartnerUsers', role, partnerId],
+    queryKey: ['allPartnerUsers', userRole, partnerId],
     queryFn: async () => {
       const { partnerUsersService } = await import('@/services/supabaseService');
       const partners = await partnersService.getAll({
@@ -95,7 +95,7 @@ export default function AdminPartners() {
     queryKey: ['allDeliverables', role, partnerId],
     queryFn: async () => {
       return deliverablesService.getAll({
-        role: role || undefined,
+        role: userRole || undefined,
         currentUserPartnerId: partnerId || undefined,
       });
     },
@@ -104,10 +104,10 @@ export default function AdminPartners() {
 
   // Fetch all nominations for progress calculation (role-based filtering)
   const { data: allNominations = [] } = useQuery({
-    queryKey: ['allNominations', role, partnerId],
+    queryKey: ['allNominations', userRole, partnerId],
     queryFn: async () => {
       return nominationsService.getAll({
-        role: role || undefined,
+        role: userRole || undefined,
         currentUserPartnerId: partnerId || undefined,
       });
     },
