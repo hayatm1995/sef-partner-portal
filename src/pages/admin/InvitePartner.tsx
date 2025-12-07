@@ -15,6 +15,7 @@ export default function InvitePartner() {
   const { user, role, loading } = useAuth();
   const [partnerName, setPartnerName] = useState('');
   const [partnerEmail, setPartnerEmail] = useState('');
+  const [tier, setTier] = useState('');
 
   // Wait for role to be loaded before checking access
   if (loading || !role) {
@@ -30,9 +31,10 @@ export default function InvitePartner() {
     );
   }
 
-  // STRICT: Check if user is superadmin - use role from context (already resolved from database)
+  // STRICT: Check if user is admin or superadmin - use role from context (already resolved from database)
   const userRole = role || user?.role;
   const isSuperAdmin = userRole === 'superadmin';
+  const isAdmin = userRole === 'admin' || isSuperAdmin;
 
   const invitePartnerMutation = useMutation({
     mutationFn: async (data) => {
@@ -51,18 +53,26 @@ export default function InvitePartner() {
 
       if (error) {
         console.error('Error inviting partner:', error);
-        toast.error(error.message || 'Failed to send invite');
-        throw error;
-      } else {
-        toast.success('Invite sent!');
+        const errorMessage = error.message || 'Failed to send invite';
+        toast.error(errorMessage);
+        throw new Error(errorMessage);
+      }
+
+      // Check if result has error
+      if (result?.error) {
+        const errorMessage = result.error || 'Failed to send invite';
+        toast.error(errorMessage);
+        throw new Error(errorMessage);
       }
 
       return result;
     },
-    onSuccess: () => {
+    onSuccess: (result, variables) => {
       // Reset form
       setPartnerName('');
       setPartnerEmail('');
+      setTier('');
+      toast.success(`Invite sent to ${variables.email}`);
     },
     onError: (error) => {
       // Error already handled in mutationFn with toast
@@ -96,13 +106,13 @@ export default function InvitePartner() {
     });
   };
 
-  // STRICT: Only superadmin can access
-  if (!isSuperAdmin) {
+  // STRICT: Only admin or superadmin can access
+  if (!isAdmin) {
     return (
       <div className="p-4 md:p-8 max-w-7xl mx-auto">
         <Card>
           <CardContent className="p-8 text-center">
-            <p className="text-gray-600">Access denied. Superadmin access required.</p>
+            <p className="text-gray-600">Access denied. Admin access required.</p>
           </CardContent>
         </Card>
       </div>
@@ -164,6 +174,24 @@ export default function InvitePartner() {
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   The partner will receive a magic link email to set up their account
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="tier" className="text-sm font-semibold text-gray-700">
+                  Tier (Optional)
+                </Label>
+                <Input
+                  id="tier"
+                  type="text"
+                  placeholder="e.g., Platinum, Gold, Silver, Standard"
+                  value={tier}
+                  onChange={(e) => setTier(e.target.value)}
+                  disabled={invitePartnerMutation.isPending}
+                  className="h-11"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Partner tier level (defaults to Standard if not specified)
                 </p>
               </div>
 

@@ -42,10 +42,10 @@ function generateBelongPlusEmailTemplate(
           <tr>
             <td style="background: linear-gradient(135deg, #F47B20 0%, #4A1B85 100%); padding: 40px 30px; text-align: center;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">
-                Welcome to SEF Partner Portal
+                Welcome to the SEF Partner Hub
               </h1>
               <p style="margin: 12px 0 0 0; color: rgba(255, 255, 255, 0.9); font-size: 16px;">
-                SEF Partner Portal
+                Your Partnership Portal
               </p>
             </td>
           </tr>
@@ -97,10 +97,10 @@ function generateBelongPlusEmailTemplate(
                 <tr>
                   <td align="center" style="padding-bottom: 20px;">
                     <p style="margin: 0; color: #6b7280; font-size: 14px; font-weight: 600;">
-                      SEF Partner Portal
+                      SEF TEAM
                     </p>
                     <p style="margin: 8px 0 0 0; color: #9ca3af; font-size: 12px;">
-                      Powered by Sheraa
+                      Sharjah Entrepreneurship Festival
                     </p>
                   </td>
                 </tr>
@@ -143,11 +143,11 @@ async function sendResendEmail(
         "Authorization": `Bearer ${resendApiKey}`,
       },
       body: JSON.stringify({
-        from: "SEF Partner Portal <noreply@sheraa.ae>",
+        from: "SEF TEAM <no-reply@sefpartners.vercel.app>",
         to: email,
-        subject: "Welcome to SEF Partner Portal - Set Up Your Account",
+        subject: "Your SEF Partner Hub Access",
         html: generateBelongPlusEmailTemplate(
-          partnerName,
+          partnerName || name,
           magicLink,
           siteUrl || "https://sefpartners.vercel.app"
         ),
@@ -217,7 +217,25 @@ serve(async (req) => {
 
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
 
-    if (userError || user?.app_metadata?.role !== "superadmin") {
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: "Invalid authentication" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Get requesting user's role from partner_users table
+    const { data: requestingPartnerUser, error: roleError } = await supabaseAdmin
+      .from("partner_users")
+      .select("id, role")
+      .eq("auth_user_id", user.id)
+      .single();
+
+    const requestingRole = requestingPartnerUser?.role;
+    const isSuperAdmin = requestingRole === "superadmin" || requestingRole === "sef_admin";
+    const isAdmin = requestingRole === "admin" || isSuperAdmin;
+
+    if (!isAdmin) {
       return new Response(JSON.stringify({ error: "Admin access required" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -227,7 +245,7 @@ serve(async (req) => {
     const requestingUser = user;
 
     // Parse request body
-    const { email, name } = await req.json();
+    const { email, name, tier } = await req.json();
 
     // Validation
     if (!email || !name) {
@@ -241,84 +259,96 @@ serve(async (req) => {
     }
 
     // Check if user already exists
-    const { data: existingUser } = await supabaseAdmin.auth.admin.getUserByEmail(
+    const { data: existingAuthUser } = await supabaseAdmin.auth.admin.getUserByEmail(
       email
     );
 
-    if (existingUser?.user) {
-      return new Response(
-        JSON.stringify({ error: "User with this email already exists" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
+    let authUserData;
+    let authUserId: string;
 
-    // 1. Create auth user with role="partner" and status="invited"
-    const { data: authUserData, error: authError } =
-      await supabaseAdmin.auth.admin.createUser({
-        email,
-        email_confirm: false, // User will confirm via magic link
-        user_metadata: {
-          role: "partner",
-          status: "invited",
-          name: name,
-        },
-      });
+    if (existingAuthUser?.user) {
+      // User already exists - use existing user
+      authUserData = { user: existingAuthUser.user };
+      authUserId = existingAuthUser.user.id;
+    } else {
+      // 1. Create auth user with role="partner" and status="invited"
+      const { data: newAuthUserData, error: authError } =
+        await supabaseAdmin.auth.admin.createUser({
+          email,
+          email_confirm: false, // User will confirm via magic link
+          user_metadata: {
+            role: "partner",
+            status: "invited",
+            name: name,
+          },
+        });
 
-    if (authError) {
-      return new Response(
-        JSON.stringify({ error: authError.message }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
+      if (authError) {
+        return new Response(
+          JSON.stringify({ error: authError.message }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
 
-    if (!authUserData?.user) {
-      return new Response(
-        JSON.stringify({ error: "Failed to create auth user" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      if (!newAuthUserData?.user) {
+        return new Response(
+          JSON.stringify({ error: "Failed to create auth user" }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      authUserData = newAuthUserData;
+      authUserId = newAuthUserData.user.id;
     }
 
     // 2. Create or get partner record
-    // Extract company name from email or use name as fallback
+    // Use provided name or extract from email
     const companyName = name.includes('@') ? name.split('@')[0] : name;
     
-    // Check if partner already exists (by email domain or name)
+    // Check if partner already exists (by primary_email or name)
     const { data: existingPartner } = await supabaseAdmin
       .from("partners")
-      .select("id")
-      .ilike("name", `%${companyName}%`)
+      .select("id, name")
+      .or(`primary_email.eq.${email},name.ilike.%${companyName}%`)
       .limit(1)
-      .single();
+      .maybeSingle();
 
     let partnerId: string | null = null;
 
     if (existingPartner?.id) {
       partnerId = existingPartner.id;
+      // Update primary_email if not set
+      if (!existingPartner.primary_email) {
+        await supabaseAdmin
+          .from("partners")
+          .update({ primary_email: email })
+          .eq("id", partnerId);
+      }
     } else {
       // Create new partner record
       const { data: newPartner, error: partnerError } = await supabaseAdmin
         .from("partners")
         .insert({
           name: companyName,
-          tier: "Standard",
+          tier: tier || "Standard",
           contract_status: "Pending",
+          primary_email: email,
           assigned_account_manager: requestingUser.email || null,
         })
         .select("id")
         .single();
 
       if (partnerError || !newPartner?.id) {
-        // Rollback: delete auth user if partner creation fails
-        await supabaseAdmin.auth.admin.deleteUser(authUserData.user.id);
+        // Rollback: delete auth user if partner creation fails (only if we created it)
+        if (!existingAuthUser?.user) {
+          await supabaseAdmin.auth.admin.deleteUser(authUserId);
+        }
         return new Response(
           JSON.stringify({ error: partnerError?.message || "Failed to create partner record" }),
           {
@@ -356,30 +386,67 @@ serve(async (req) => {
       }
     }
 
-    // 3. Insert into partner_users table
-    const { data: partnerUser, error: partnerUserError } =
-      await supabaseAdmin.from("partner_users").insert({
-        auth_user_id: authUserData.user.id,
-        partner_id: partnerId,
-        email,
-        full_name: name,
-        role: "partner",
-      }).select().single();
+    // 3. Check if partner_user already exists
+    const { data: existingPartnerUser } = await supabaseAdmin
+      .from("partner_users")
+      .select("id")
+      .eq("auth_user_id", authUserId)
+      .maybeSingle();
 
-    if (partnerUserError) {
-      // Rollback: delete auth user and partner if partner_user insert fails
-      await supabaseAdmin.auth.admin.deleteUser(authUserData.user.id);
-      if (partnerId && !existingPartner?.id) {
-        // Only delete partner if we created it
-        await supabaseAdmin.from("partners").delete().eq("id", partnerId);
+    let partnerUser;
+    if (existingPartnerUser?.id) {
+      // Update existing partner_user to ensure correct partner_id
+      const { data: updatedPartnerUser, error: updateError } = await supabaseAdmin
+        .from("partner_users")
+        .update({
+          partner_id: partnerId,
+          email,
+          full_name: name,
+          role: "partner",
+        })
+        .eq("id", existingPartnerUser.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        return new Response(
+          JSON.stringify({ error: updateError.message }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
       }
-      return new Response(
-        JSON.stringify({ error: partnerUserError.message }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+      partnerUser = updatedPartnerUser;
+    } else {
+      // Insert new partner_user
+      const { data: newPartnerUser, error: partnerUserError } =
+        await supabaseAdmin.from("partner_users").insert({
+          auth_user_id: authUserId,
+          partner_id: partnerId,
+          email,
+          full_name: name,
+          role: "partner",
+        }).select().single();
+
+      if (partnerUserError) {
+        // Rollback: delete auth user and partner if partner_user insert fails (only if we created them)
+        if (!existingAuthUser?.user) {
+          await supabaseAdmin.auth.admin.deleteUser(authUserId);
         }
-      );
+        if (partnerId && !existingPartner?.id) {
+          // Only delete partner if we created it
+          await supabaseAdmin.from("partners").delete().eq("id", partnerId);
+        }
+        return new Response(
+          JSON.stringify({ error: partnerUserError.message }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+      partnerUser = newPartnerUser;
     }
 
     // 4. Generate magic link
@@ -389,15 +456,24 @@ serve(async (req) => {
         type: "magiclink",
         email,
         options: {
-          redirectTo: `${siteUrl}/Login`,
+          redirectTo: `${siteUrl}/partner`,
         },
       });
 
     if (linkError || !magicLinkData?.properties?.action_link) {
-      // Rollback: delete both auth user and partner_user
-      await supabaseAdmin.auth.admin.deleteUser(authUserData.user.id);
+      // Don't rollback if user already existed - just return error
+      if (!existingAuthUser?.user) {
+        await supabaseAdmin.auth.admin.deleteUser(authUserId);
+        if (partnerId && !existingPartner?.id) {
+          await supabaseAdmin.from("partners").delete().eq("id", partnerId);
+        }
+        if (!existingPartnerUser?.id) {
+          // partner_user was created, but we can't easily delete it without the ID
+          // This is a rare edge case
+        }
+      }
       return new Response(
-        JSON.stringify({ error: "Failed to generate magic link" }),
+        JSON.stringify({ error: "Failed to generate magic link: " + (linkError?.message || "Unknown error") }),
         {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -427,25 +503,21 @@ serve(async (req) => {
     }
 
     // 6. Log activity - get admin user_id from partner_users
-    const { data: adminPartnerUser } = await supabaseAdmin
-      .from("partner_users")
-      .select("id")
-      .eq("auth_user_id", requestingUser.id)
-      .single();
-
     await supabaseAdmin.from("activity_log").insert({
       activity_type: "partner_invited",
-      user_id: adminPartnerUser?.id || null,
-      user_email: requestingUser.email,
-      target_user_email: email,
-      description: `Invited partner: ${name} (${email})`,
+      user_id: requestingPartnerUser?.id || null,
       partner_id: partnerId,
+      description: `Invited partner: ${name} (${email})`,
       metadata: {
         partner_user_id: partnerUser.id,
-        auth_user_id: authUserData.user.id,
+        auth_user_id: authUserId,
         partner_id: partnerId,
         invited_by: requestingUser.id,
+        invited_by_email: requestingUser.email,
         company_name: companyName,
+        tier: tier || "Standard",
+        is_new_user: !existingAuthUser?.user,
+        is_new_partner: !existingPartner?.id,
       },
     });
 
