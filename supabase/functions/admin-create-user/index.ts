@@ -217,10 +217,10 @@ serve(async (req) => {
         temporary_password: temporaryPassword, // Only return in development
         email_data: {
           to: email,
-          subject: "Welcome to SEF Partner Portal",
-          recovery_link: recoveryLink,
-          portal_url: "https://portal.visitsef.com",
-          support_email: "partners@sheraa.ae",
+      subject: "Welcome to SEF Partner Portal",
+      recovery_link: recoveryLink,
+      portal_url: Deno.env.get("VITE_SITE_URL") || Deno.env.get("SUPABASE_SITE_URL") || "https://sefpartners.vercel.app",
+      support_email: "partners@sheraa.ae",
         },
       }),
       {
@@ -228,9 +228,16 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
-  } catch (error) {
+  } catch (error: any) {
+    console.error("Edge function error:", error);
+    const errorMessage = error?.message || "Internal server error";
+    const errorDetails = error?.details || error?.hint || "";
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: errorMessage,
+        details: errorDetails,
+        type: error?.name || "UnknownError"
+      }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

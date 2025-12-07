@@ -23,7 +23,8 @@ import {
   Upload,
   TrendingUp,
   Building2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  DollarSign
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
@@ -33,6 +34,17 @@ export default function PartnerDashboard() {
   const navigate = useNavigate();
 
   const partnerId = user?.partner_id || partner?.id;
+
+  // Fetch partner data for budget
+  const { data: partnerData } = useQuery({
+    queryKey: ['partnerData', partnerId],
+    queryFn: async () => {
+      if (!partnerId) return null;
+      const { partnersService } = await import('@/services/supabaseService');
+      return partnersService.getById(partnerId);
+    },
+    enabled: !!partnerId,
+  });
 
   // Fetch partner progress
   const { data: progress, isLoading: loadingProgress } = useQuery({
@@ -69,6 +81,7 @@ export default function PartnerDashboard() {
   const progressPercentage = progress?.progress_percentage ?? 0;
   const approvedCount = progress?.approved_submissions ?? 0;
   const totalCount = progress?.total_deliverables ?? 0;
+  const currentPartner = partnerData || partner;
 
   const getStatusConfig = (deliverable) => {
     // TODO: Check submission status from partner_submissions
@@ -313,6 +326,57 @@ export default function PartnerDashboard() {
               </CardContent>
             </Card>
           </motion.div>
+        </div>
+
+        {/* Stats Section */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          {/* Profile Completion */}
+          <Card className="border-orange-200">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Profile Completion</p>
+                  <p className="text-3xl font-bold text-orange-600">
+                    {progressPercentage.toFixed(0)}%
+                  </p>
+                </div>
+                <UserCircle className="w-10 h-10 text-orange-400" />
+              </div>
+              <Progress value={progressPercentage} className="h-2" />
+            </CardContent>
+          </Card>
+
+          {/* Deliverables */}
+          <Card className="border-blue-200">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Deliverables</p>
+                  <p className="text-3xl font-bold text-blue-600">
+                    {approvedCount}/{totalCount}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Approved</p>
+                </div>
+                <FileText className="w-10 h-10 text-blue-400" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Allocated Budget */}
+          <Card className="border-green-200">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Allocated Budget</p>
+                  <p className="text-3xl font-bold text-green-600">
+                    {currentPartner?.allocated_budget ? `$${parseFloat(currentPartner.allocated_budget).toLocaleString()}` : 'N/A'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Total allocation</p>
+                </div>
+                <DollarSign className="w-10 h-10 text-green-400" />
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Progress Section */}

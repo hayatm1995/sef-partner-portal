@@ -628,7 +628,6 @@ export default function Layout({ children, currentPageName }) {
   };
 
   const adminBaseNavItems = [
-    { title: "Dashboard", url: createPageUrl("Dashboard"), icon: LayoutDashboard },
     { title: "Manage Partners", url: "/admin/partners", icon: Users },
     { title: "Invite Partner", url: "/admin/invite-partner", icon: UserPlus },
     { title: "Support Messages", url: "/admin/support", icon: MessageCircle, badge: adminSupportUnread > 0 ? adminSupportUnread : null },
@@ -640,9 +639,14 @@ export default function Layout({ children, currentPageName }) {
     { title: "Approvals System", url: "/admin/approvals", icon: CheckSquare },
     { title: "VIP Invitations", url: "/admin/vip-invitations", icon: Users },
     { title: "Send Email", url: createPageUrl("SendEmail"), icon: Mail },
-    { title: "Admin Panel", url: createPageUrl("AdminPanel"), icon: Shield },
     { title: "Email Invitations", url: createPageUrl("EmailInvitations"), icon: Mail },
     { title: "Email Test", url: createPageUrl("EmailTest"), icon: Mail },
+  ];
+
+  // Admin Panel section (separate group)
+  const adminPanelNavItems = [
+    { title: "Admin Dashboard", url: createPageUrl("Dashboard"), icon: LayoutDashboard },
+    { title: "Admin Panel", url: createPageUrl("AdminPanel"), icon: Shield },
   ];
 
   if (isSuperAdmin) {
@@ -715,6 +719,7 @@ export default function Layout({ children, currentPageName }) {
   // STRICT: Show Admin nav ONLY if user is admin/superadmin and NOT viewing as partner
   // "View as Partner" button works without changing actual role - it's just a view mode
   const adminNavItems = (isAdmin && !effectiveViewingAsPartnerId) ? adminBaseNavItems : [];
+  const adminPanelNavItemsDisplay = (isAdmin && !effectiveViewingAsPartnerId) ? adminPanelNavItems : [];
 
   const { logout } = useAuth();
   

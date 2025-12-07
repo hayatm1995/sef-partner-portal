@@ -377,8 +377,13 @@ function PagesContent() {
                             <Route path="/Dashboard" element={<Navigate to="/partner/dashboard" replace />} />
                             
                             {/* Legacy/Shared Routes */}
-                            <Route path="/Deliverables" element={<PartnerDeliverables />} />
-                            <Route path="/deliverables" element={<PartnerDeliverables />} />
+                            {/* Partner-only routes - only accessible when NOT viewing as admin */}
+                            {userIsPartner && !userIsSuperadmin && (
+                                <>
+                                    <Route path="/Deliverables" element={<PartnerDeliverables />} />
+                                    <Route path="/deliverables" element={<PartnerDeliverables />} />
+                                </>
+                            )}
                             
                             <Route path="/Nominations" element={<Nominations />} />
                             <Route path="/PartnerHub" element={<PartnerHub />} />

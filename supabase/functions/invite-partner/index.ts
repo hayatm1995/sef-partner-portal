@@ -149,7 +149,7 @@ async function sendResendEmail(
         html: generateBelongPlusEmailTemplate(
           partnerName,
           magicLink,
-          "https://portal.visitsef.com"
+          siteUrl || "https://sefpartners.vercel.app"
         ),
       }),
     });
@@ -187,7 +187,9 @@ serve(async (req) => {
 
     if (!supabaseUrl || !supabaseServiceKey) {
       return new Response(
-        JSON.stringify({ error: "Server configuration error" }),
+        JSON.stringify({ 
+          error: "Server configuration error: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables" 
+        }),
         {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -308,7 +310,7 @@ serve(async (req) => {
     }
 
     // 3. Generate magic link
-    const siteUrl = Deno.env.get("VITE_SITE_URL") || "https://portal.visitsef.com";
+    const siteUrl = Deno.env.get("VITE_SITE_URL") || Deno.env.get("SUPABASE_SITE_URL") || "https://sefpartners.vercel.app";
     const { data: magicLinkData, error: linkError } =
       await supabaseAdmin.auth.admin.generateLink({
         type: "magiclink",
@@ -376,8 +378,14 @@ serve(async (req) => {
     );
   } catch (error: any) {
     console.error("Edge function error:", error);
+    const errorMessage = error?.message || "Internal server error";
+    const errorDetails = error?.details || error?.hint || "";
     return new Response(
-      JSON.stringify({ error: error.message || "Internal server error" }),
+      JSON.stringify({ 
+        error: errorMessage,
+        details: errorDetails,
+        type: error?.name || "UnknownError"
+      }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
