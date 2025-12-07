@@ -54,9 +54,10 @@ import SEFFYJudgeSection from "../components/partnerhub/SEFFYJudgeSection";
 import DigitalDisplaySection from "../components/partnerhub/DigitalDisplaySection";
 import DeliverablesSection from "../components/partnerhub/DeliverablesSection";
 import BoothDashboard from "../components/partner/BoothDashboard";
+import PartnerHubHomepage from "../components/partnerhub/PartnerHubHomepage";
 
 export default function PartnerHub() {
-  const [activeTab, setActiveTab] = useState("profile");
+  const [activeTab, setActiveTab] = useState("home");
   const location = useLocation();
   const { user, partner, role, partnerId, loading: authLoading } = useAuth();
 
@@ -257,6 +258,13 @@ export default function PartnerHub() {
   const progressPercentage = calculateProgress();
 
   const allTabs = [
+    { 
+      id: "home", 
+      label: "Home", 
+      icon: LayoutDashboard, 
+      section: "home",
+      gradient: "from-orange-500 to-amber-600"
+    },
     { 
       id: "profile", 
       label: "Profile", 
@@ -552,6 +560,7 @@ export default function PartnerHub() {
                           {activeTabData.label}
                         </motion.h2>
                         <p className="text-white/95 text-lg font-medium">
+                          {activeTabData.id === 'home' && 'Welcome to your Partner Hub dashboard'}
                           {activeTabData.id === 'profile' && 'Company information and account details'}
                           {activeTabData.id === 'team' && 'Manage team member access'}
                           {activeTabData.id === 'contacts' && 'Key points of contact'}
@@ -579,6 +588,10 @@ export default function PartnerHub() {
               )}
 
               <div className="p-8">
+                <TabsContent value="home" className="mt-0">
+                  <PartnerHubHomepage />
+                </TabsContent>
+                
                 {hasSection("profile") && (
                   <TabsContent value="profile" className="mt-0">
                     {isAdminGlobalView ? (
