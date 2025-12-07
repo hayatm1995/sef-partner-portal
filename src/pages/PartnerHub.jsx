@@ -211,6 +211,9 @@ export default function PartnerHub() {
   });
 
   const hasSection = (section) => {
+    // Home section is always visible
+    if (section === 'home') return true;
+    
     // Admins always see all sections (when not viewing as partner)
     if (isAdmin && !viewAsPartnerId) return true;
     
