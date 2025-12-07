@@ -38,6 +38,7 @@ export default function AdminBooths() {
   const [searchQuery, setSearchQuery] = useState("");
   const [assigningBooth, setAssigningBooth] = useState(null);
   const [selectedPartnerId, setSelectedPartnerId] = useState("");
+  const [selectedBoothNumber, setSelectedBoothNumber] = useState("");
   const [allowOverride, setAllowOverride] = useState(false);
 
   // Check if user is admin
@@ -70,9 +71,10 @@ export default function AdminBooths() {
   });
 
   const assignMutation = useMutation({
-    mutationFn: async ({ boothId, partnerId }) => {
+    mutationFn: async ({ boothId, partnerId, boothNumber }) => {
       const updates = {
         partner_id: partnerId || null,
+        booth_number: boothNumber || null,
         status: partnerId ? 'Assigned' : 'Assignment Pending',
         updated_at: new Date().toISOString(),
       };
@@ -80,9 +82,11 @@ export default function AdminBooths() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adminBooths'] });
+      queryClient.invalidateQueries({ queryKey: ['exhibitorStands'] });
       toast.success('Booth assignment saved');
       setAssigningBooth(null);
       setSelectedPartnerId("");
+      setSelectedBoothNumber("");
       setAllowOverride(false);
     },
     onError: (error) => {
@@ -93,6 +97,7 @@ export default function AdminBooths() {
   const openAssignDialog = (booth) => {
     setAssigningBooth(booth);
     setSelectedPartnerId(booth.partner_id || "");
+    setSelectedBoothNumber(booth.booth_number || "");
     setAllowOverride(false);
   };
 
@@ -117,6 +122,7 @@ export default function AdminBooths() {
     assignMutation.mutate({
       boothId: assigningBooth.id,
       partnerId: selectedPartnerId || null,
+      boothNumber: selectedBoothNumber || null,
     });
   };
 
@@ -139,19 +145,22 @@ export default function AdminBooths() {
   }, [booths, searchQuery]);
 
   const getStatusBadge = (status) => {
+    // Map database statuses to UI statuses
     const statusMap = {
-      'Assignment Pending': { variant: 'secondary', className: 'bg-gray-100 text-gray-800' },
-      'Pending': { variant: 'secondary', className: 'bg-yellow-100 text-yellow-800' },
-      'Assigned': { variant: 'default', className: 'bg-blue-100 text-blue-800' },
-      'Approved': { variant: 'default', className: 'bg-green-100 text-green-800' },
-      'Revisions Needed': { variant: 'destructive', className: 'bg-red-100 text-red-800' },
+      'Assignment Pending': { label: 'Pending', className: 'bg-gray-100 text-gray-800 border-gray-200' },
+      'Pending': { label: 'Pending', className: 'bg-gray-100 text-gray-800 border-gray-200' },
+      'Assigned': { label: 'Assigned', className: 'bg-blue-100 text-blue-800 border-blue-200' },
+      'Approved': { label: 'Confirmed', className: 'bg-green-100 text-green-800 border-green-200' },
+      'Revisions Needed': { label: 'Pending', className: 'bg-gray-100 text-gray-800 border-gray-200' },
+      'Confirmed': { label: 'Confirmed', className: 'bg-green-100 text-green-800 border-green-200' },
+      'Completed': { label: 'Completed', className: 'bg-green-100 text-green-800 border-green-200' },
     };
 
     const statusConfig = statusMap[status] || statusMap['Assignment Pending'];
     
     return (
-      <Badge className={statusConfig.className}>
-        {status || 'Assignment Pending'}
+      <Badge variant="outline" className={statusConfig.className}>
+        {statusConfig.label}
       </Badge>
     );
   };
@@ -231,8 +240,9 @@ export default function AdminBooths() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Exhibitor Name</TableHead>
+                      <TableHead>Booth ID</TableHead>
                       <TableHead>Partner Name</TableHead>
-                      <TableHead>Booth Number</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Last Updated</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -243,11 +253,18 @@ export default function AdminBooths() {
                       <TableRow key={booth.id} className="hover:bg-gray-50">
                         <TableCell className="font-medium">
                           {booth.partners?.name || (
-                            <span className="text-gray-400 italic">Unassigned</span>
+                            <span className="text-gray-400 italic">Not assigned</span>
                           )}
                         </TableCell>
                         <TableCell>
                           {booth.booth_number || (
+                            <span className="text-gray-400">Not assigned</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {booth.partners?.name ? (
+                            <span>{booth.partners.name}</span>
+                          ) : (
                             <span className="text-gray-400">—</span>
                           )}
                         </TableCell>
@@ -264,7 +281,7 @@ export default function AdminBooths() {
                               size="sm"
                               onClick={() => openAssignDialog(booth)}
                             >
-                              Assign Partner
+                              Assign Booth
                             </Button>
                             <Button
                               variant="outline"
@@ -291,6 +308,7 @@ export default function AdminBooths() {
         if (!open) {
           setAssigningBooth(null);
           setSelectedPartnerId("");
+          setSelectedBoothNumber("");
           setAllowOverride(false);
         }
       }}>
@@ -300,13 +318,7 @@ export default function AdminBooths() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label className="text-sm">Booth Number</Label>
-              <div className="mt-1 text-sm font-medium text-gray-900">
-                {assigningBooth?.booth_number || '—'}
-              </div>
-            </div>
-            <div>
-              <Label className="text-sm">Partner</Label>
+              <Label className="text-sm">Select Partner</Label>
               <Select
                 value={selectedPartnerId}
                 onValueChange={setSelectedPartnerId}
@@ -324,6 +336,14 @@ export default function AdminBooths() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <Label className="text-sm">Booth Number</Label>
+              <Input
+                value={selectedBoothNumber}
+                onChange={(e) => setSelectedBoothNumber(e.target.value)}
+                placeholder="e.g., A-12, B-05"
+              />
             </div>
             {conflictingAssignment && (
               <div className="p-3 rounded-lg border border-amber-300 bg-amber-50 text-sm space-y-2">
@@ -352,6 +372,7 @@ export default function AdminBooths() {
               onClick={() => {
                 setAssigningBooth(null);
                 setSelectedPartnerId("");
+                setSelectedBoothNumber("");
                 setAllowOverride(false);
               }}
             >

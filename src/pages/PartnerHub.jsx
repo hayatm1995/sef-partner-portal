@@ -53,6 +53,7 @@ import PitchJudgeSection from "../components/partnerhub/PitchJudgeSection";
 import SEFFYJudgeSection from "../components/partnerhub/SEFFYJudgeSection";
 import DigitalDisplaySection from "../components/partnerhub/DigitalDisplaySection";
 import DeliverablesSection from "../components/partnerhub/DeliverablesSection";
+import BoothDashboard from "../components/partner/BoothDashboard";
 
 export default function PartnerHub() {
   const [activeTab, setActiveTab] = useState("profile");
@@ -189,9 +190,31 @@ export default function PartnerHub() {
     'speakers': 'Speaker Requests',
   };
   
+  // Fetch booth for current partner to check if they have one
+  const { data: partnerBooth } = useQuery({
+    queryKey: ['partnerBoothForHub', currentPartnerId],
+    queryFn: async () => {
+      if (!currentPartnerId) return null;
+      try {
+        const { exhibitorStandsService } = await import('@/services/supabaseService');
+        const stands = await exhibitorStandsService.getAll(currentPartnerId);
+        return stands.length > 0 ? stands[0] : null;
+      } catch (error) {
+        console.error('Error fetching booth:', error);
+        return null;
+      }
+    },
+    enabled: !!currentPartnerId && !isAdminGlobalView,
+  });
+
   const hasSection = (section) => {
     // Admins always see all sections (when not viewing as partner)
     if (isAdmin && !viewAsPartnerId) return true;
+    
+    // Special handling for booth - only show if partner has a booth assigned
+    if (section === 'booth') {
+      return !!partnerBooth;
+    }
     
     // Special handling for pitch_judge and seffy_judge based on partner flags
     if (section === 'pitch_judge') {
@@ -721,6 +744,12 @@ export default function PartnerHub() {
                 {hasSection("deliverables") && (
                   <TabsContent value="deliverables" className="mt-0">
                     <DeliverablesSection />
+                  </TabsContent>
+                )}
+
+                {hasSection("booth") && (
+                  <TabsContent value="booth" className="mt-0">
+                    <BoothDashboard />
                   </TabsContent>
                 )}
 

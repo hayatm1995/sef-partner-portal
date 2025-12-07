@@ -503,6 +503,23 @@ export default function Layout({ children, currentPageName }) {
     "Review & Approve": "review_approve",
   };
 
+  // Fetch booth for current partner to conditionally show Exhibitor Stand link
+  const { data: partnerBooth } = useQuery({
+    queryKey: ['partnerBoothForSidebar', effectivePartnerId],
+    queryFn: async () => {
+      if (!effectivePartnerId) return null;
+      try {
+        const { exhibitorStandsService } = await import('@/services/supabaseService');
+        const stands = await exhibitorStandsService.getAll(effectivePartnerId);
+        return stands.length > 0 ? stands[0] : null;
+      } catch (error) {
+        console.error('Error fetching booth for sidebar:', error);
+        return null;
+      }
+    },
+    enabled: !!effectivePartnerId && shouldShowPartnerNav,
+  });
+
   const allPartnerSections = [
     {
       label: "Overview",
@@ -510,7 +527,8 @@ export default function Layout({ children, currentPageName }) {
       items: [
         { title: "Dashboard", url: createPageUrl("Dashboard"), icon: LayoutDashboard, description: "Your partnership hub" },
         { title: "Getting Started", url: createPageUrl("GettingStarted"), icon: Target, description: "Quick start guide" },
-        { title: "Exhibitor Stand", url: createPageUrl("ExhibitorStand"), icon: Building2, description: "Booth placement & artwork" },
+        // Only show Exhibitor Stand if partner has a booth assigned
+        ...(partnerBooth ? [{ title: "Exhibitor Stand", url: createPageUrl("ExhibitorStand"), icon: Building2, description: "Booth placement & artwork" }] : []),
       ]
     },
     {

@@ -79,6 +79,28 @@ export default function AdminBoothDetails() {
           status: newStatus,
           updated_at: new Date().toISOString(),
         });
+        
+        // Log activity
+        if (booth?.partner_id) {
+          try {
+            const { activityLogService } = await import('@/services/supabaseService');
+            await activityLogService.create({
+              partner_id: booth.partner_id,
+              user_id: user?.id,
+              activity_type: 'booth_status_updated',
+              description: `Booth status updated to "${newStatus}"`,
+              metadata: {
+                booth_id: id,
+                booth_number: booth.booth_number,
+                old_status: booth.status,
+                new_status: newStatus,
+              }
+            });
+          } catch (error) {
+            console.error('Failed to log activity:', error);
+          }
+        }
+        
         return updated;
       } finally {
         setStatusUpdating(false);
@@ -87,6 +109,7 @@ export default function AdminBoothDetails() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adminBooth', id] });
       queryClient.invalidateQueries({ queryKey: ['adminBooths'] });
+      queryClient.invalidateQueries({ queryKey: ['exhibitorStands'] });
       toast.success('Booth status updated successfully');
     },
     onError: (error) => {
@@ -280,10 +303,12 @@ export default function AdminBoothDetails() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Assignment Pending">Assignment Pending</SelectItem>
+                    <SelectItem value="Assignment Pending">Pending</SelectItem>
                     <SelectItem value="Pending">Pending</SelectItem>
                     <SelectItem value="Assigned">Assigned</SelectItem>
-                    <SelectItem value="Approved">Approved</SelectItem>
+                    <SelectItem value="Approved">Confirmed</SelectItem>
+                    <SelectItem value="Confirmed">Confirmed</SelectItem>
+                    <SelectItem value="Completed">Completed</SelectItem>
                     <SelectItem value="Revisions Needed">Revisions Needed</SelectItem>
                   </SelectContent>
                 </Select>
