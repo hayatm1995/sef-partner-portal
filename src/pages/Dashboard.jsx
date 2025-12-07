@@ -6,7 +6,8 @@ import {
   partnersService, 
   deliverablesService, 
   nominationsService, 
-  notificationsService
+  notificationsService,
+  activityLogService
 } from "@/services/supabaseService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -158,20 +159,55 @@ function AdminFullDashboard() {
     staleTime: 30000,
   });
 
+  // Fetch recent activity logs
+  const { data: recentActivityLogs = [], isLoading: loadingActivity } = useQuery({
+    queryKey: ['recentActivityLogs'],
+    queryFn: async () => {
+      try {
+        console.log('[AdminFullDashboard] Fetching recent activity logs...');
+        const result = await activityLogService.getAll(10);
+        console.log('[AdminFullDashboard] Fetched activity logs:', result?.length || 0);
+        return result || [];
+      } catch (error) {
+        console.error('[AdminFullDashboard] Error fetching activity logs:', error);
+        // Non-critical - return empty array
+        return [];
+      }
+    },
+    enabled: !!user,
+    retry: 1,
+    staleTime: 30000,
+  });
+
   const safeAllPartners = Array.isArray(allPartners) ? allPartners : [];
   const safeAllDeliverables = Array.isArray(allDeliverables) ? allDeliverables : [];
   const safeAllNominations = Array.isArray(allNominations) ? allNominations : [];
   
-  // Show loading state if any query is loading
+  // Show loading state if any critical query is loading
   const isLoading = loadingPartners || loadingDeliverables || loadingNominations;
   
-  // Show error state if any query has an error
-  const hasError = partnersError || deliverablesError || nominationsError;
+  // Show error state only for critical errors (partners/deliverables)
+  // Nominations error is non-critical - dashboard can still function
+  const hasCriticalError = partnersError || deliverablesError;
+  const hasNonCriticalError = nominationsError;
+  
+  // Log non-critical errors but don't block dashboard
+  React.useEffect(() => {
+    if (hasNonCriticalError) {
+      console.warn('[AdminFullDashboard] Non-critical error loading nominations:', nominationsError);
+    }
+  }, [hasNonCriticalError, nominationsError]);
   
   const totalPartners = safeAllPartners.length;
-  const pendingDeliverables = safeAllDeliverables.filter(d => d?.status === 'Pending Review' || d?.status === 'pending_review').length;
+  // Pending deliverables: check for 'pending', 'Pending Review', 'pending_review', etc.
+  const pendingDeliverables = safeAllDeliverables.filter(d => {
+    const status = d?.status?.toLowerCase() || '';
+    return status.includes('pending') || status === 'pending_review';
+  }).length;
   const approvedDeliverables = safeAllDeliverables.filter(d => d?.status === 'Approved' || d?.status === 'approved').length;
   const rejectedDeliverables = safeAllDeliverables.filter(d => d?.status === 'Rejected' || d?.status === 'rejected').length;
+  // Total Submissions = count of all deliverables
+  const totalSubmissions = safeAllDeliverables.length;
   const pendingNominations = safeAllNominations.filter(n => n?.status && ['Submitted', 'Under Review', 'submitted', 'under_review'].includes(n.status)).length;
   const approvedNominations = safeAllNominations.filter(n => n?.status === 'Approved' || n?.status === 'approved').length;
   
@@ -183,7 +219,16 @@ function AdminFullDashboard() {
     ? Math.round((approvedNominations / safeAllNominations.length) * 100)
     : 0;
 
-  const recentActivity = [];
+  // Format recent activity from activity logs
+  const recentActivity = (recentActivityLogs || []).slice(0, 10).map(log => ({
+    id: log.id,
+    type: log.activity_type || 'activity',
+    description: log.description || 'Activity',
+    partner: log.partner?.name || 'Unknown Partner',
+    user: log.user?.full_name || log.user?.email || 'Unknown User',
+    timestamp: log.created_at,
+    metadata: log.metadata || {}
+  }));
 
   // Show loading state
   if (isLoading) {
@@ -199,8 +244,9 @@ function AdminFullDashboard() {
     );
   }
 
-  // Show error state
-  if (hasError) {
+  // Only show error screen for critical errors (partners/deliverables)
+  // Nominations error is handled gracefully - dashboard still shows
+  if (hasCriticalError) {
     return (
       <div className="p-4 md:p-8 max-w-7xl mx-auto">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6">
@@ -208,7 +254,6 @@ function AdminFullDashboard() {
           <p className="text-red-600 mb-4">
             {partnersError && `Partners: ${partnersError.message}`}
             {deliverablesError && `Deliverables: ${deliverablesError.message}`}
-            {nominationsError && `Nominations: ${nominationsError.message}`}
           </p>
           <Button onClick={() => window.location.reload()} variant="outline">
             Retry
@@ -217,6 +262,9 @@ function AdminFullDashboard() {
       </div>
     );
   }
+  
+  // Show warning banner for non-critical errors (nominations)
+  const showNominationsWarning = hasNonCriticalError;
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto">
@@ -290,16 +338,14 @@ function AdminFullDashboard() {
               <CardContent className="relative p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:shadow-xl group-hover:scale-110 transition-all duration-300">
-                    <DollarSign className="w-7 h-7 text-white" />
+                    <FileText className="w-7 h-7 text-white" />
                   </div>
-                  <Badge className="bg-green-100 text-green-700 border-green-200 font-semibold">Budget</Badge>
+                  <Badge className="bg-green-100 text-green-700 border-green-200 font-semibold">Submissions</Badge>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Total Allocated</p>
-                  <div className="text-5xl font-bold bg-gradient-to-br from-green-600 to-emerald-500 bg-clip-text text-transparent tabular-nums">
-                    <span className="text-2xl">AED</span> {formatNumber(totalAllocated)}
-                  </div>
-                  <p className="text-sm text-gray-600 font-medium">Partnership budget</p>
+                  <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Total Submissions</p>
+                  <p className="text-5xl font-bold bg-gradient-to-br from-green-600 to-emerald-500 bg-clip-text text-transparent tabular-nums">{formatNumber(totalSubmissions)}</p>
+                  <p className="text-sm text-gray-600 font-medium">All deliverables</p>
                 </div>
               </CardContent>
             </Card>
@@ -322,9 +368,9 @@ function AdminFullDashboard() {
                   <Badge className="bg-orange-100 text-orange-700 border-orange-200 font-semibold">Pending</Badge>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Deliverables</p>
+                  <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Pending Deliverables</p>
                   <p className="text-5xl font-bold bg-gradient-to-br from-orange-600 to-amber-500 bg-clip-text text-transparent tabular-nums">{formatNumber(pendingDeliverables)}</p>
-                  <p className="text-sm text-gray-600 font-medium">{formatNumber(safeAllDeliverables.length)} total</p>
+                  <p className="text-sm text-gray-600 font-medium">Awaiting review</p>
                 </div>
               </CardContent>
             </Card>
@@ -435,7 +481,7 @@ function AdminFullDashboard() {
                   {recentActivity.length > 0 ? (
                     recentActivity.map((activity, idx) => (
                       <motion.div
-                        key={activity.id}
+                        key={activity.id || idx}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: idx * 0.05 }}
@@ -446,7 +492,10 @@ function AdminFullDashboard() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{activity.description}</p>
-                          <p className="text-xs text-gray-500">{activity.user_email}</p>
+                          <p className="text-xs text-gray-500">
+                            {activity.partner} • {activity.user}
+                            {activity.timestamp && ` • ${new Date(activity.timestamp).toLocaleDateString()}`}
+                          </p>
                         </div>
                       </motion.div>
                     ))
@@ -454,6 +503,7 @@ function AdminFullDashboard() {
                     <div className="text-center py-8 text-gray-500">
                       <Activity className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                       <p className="text-sm">No recent activity</p>
+                      <p className="text-xs text-gray-400 mt-1">Activity logs will appear here</p>
                     </div>
                   )}
                 </div>
@@ -540,8 +590,17 @@ function AdminDashboardLite() {
   // Show loading state if any query is loading
   const isLoading = loadingPartners || loadingDeliverables || loadingNominations;
   
-  // Show error state if any query has an error
-  const hasError = partnersError || deliverablesError || nominationsError;
+  // Show error state only for critical errors (partners/deliverables)
+  // Nominations error is non-critical - dashboard can still function
+  const hasCriticalError = partnersError || deliverablesError;
+  const hasNonCriticalError = nominationsError;
+  
+  // Log non-critical errors but don't block dashboard
+  React.useEffect(() => {
+    if (hasNonCriticalError) {
+      console.warn('[AdminDashboardLite] Non-critical error loading nominations:', nominationsError);
+    }
+  }, [hasNonCriticalError, nominationsError]);
   
   const totalPartners = safeAllPartners.length;
   const pendingDeliverables = safeAllDeliverables.filter(d => d?.status === 'Pending Review' || d?.status === 'pending_review').length;
@@ -571,8 +630,9 @@ function AdminDashboardLite() {
     );
   }
 
-  // Show error state
-  if (hasError) {
+  // Only show error screen for critical errors (partners/deliverables)
+  // Nominations error is handled gracefully - dashboard still shows
+  if (hasCriticalError) {
     return (
       <div className="p-4 md:p-8 max-w-7xl mx-auto">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6">
@@ -580,7 +640,6 @@ function AdminDashboardLite() {
           <p className="text-red-600 mb-4">
             {partnersError && `Partners: ${partnersError.message}`}
             {deliverablesError && `Deliverables: ${deliverablesError.message}`}
-            {nominationsError && `Nominations: ${nominationsError.message}`}
           </p>
           <Button onClick={() => window.location.reload()} variant="outline">
             Retry
@@ -589,9 +648,26 @@ function AdminDashboardLite() {
       </div>
     );
   }
+  
+  // Show warning banner for non-critical errors (nominations)
+  const showNominationsWarning = hasNonCriticalError;
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      {/* Show warning banner for non-critical errors */}
+      {showNominationsWarning && (
+        <Card className="border-yellow-200 bg-yellow-50 mb-4">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-yellow-600" />
+              <p className="text-sm text-yellow-800">
+                Could not load nominations data. Dashboard is showing other information.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

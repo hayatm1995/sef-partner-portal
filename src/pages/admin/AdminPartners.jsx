@@ -44,17 +44,18 @@ export default function AdminPartners() {
   const [selectedPartnerId, setSelectedPartnerId] = useState(null);
   const [activeTab, setActiveTab] = useState("partners");
 
-  // STRICT: Check if user is superadmin - use role from context
+  // STRICT: Check if user is admin or superadmin - use role from context
   const { role } = useAuth();
   const isSuperAdmin = role === 'superadmin';
+  const isAdmin = role === 'admin' || isSuperAdmin;
 
-  // Redirect if not superadmin
+  // Redirect if not admin or superadmin
   React.useEffect(() => {
-    if (user && !isSuperAdmin) {
-      toast.error("Access denied. Superadmin only.");
+    if (user && !isAdmin) {
+      toast.error("Access denied. Admin access required.");
       navigate("/Dashboard");
     }
-  }, [user, isSuperAdmin, navigate]);
+  }, [user, isAdmin, navigate]);
 
   // Fetch all partners
   const { data: partners = [], isLoading: partnersLoading } = useQuery({
@@ -62,7 +63,7 @@ export default function AdminPartners() {
     queryFn: async () => {
       return partnersService.getAll();
     },
-    enabled: isSuperAdmin,
+    enabled: isAdmin,
   });
 
   // Fetch all partner users to calculate stats
@@ -78,7 +79,7 @@ export default function AdminPartners() {
       }
       return allUsers;
     },
-    enabled: isSuperAdmin,
+    enabled: isAdmin,
   });
 
   // Fetch all deliverables for progress calculation
@@ -87,7 +88,7 @@ export default function AdminPartners() {
     queryFn: async () => {
       return deliverablesService.getAll();
     },
-    enabled: isSuperAdmin,
+    enabled: isAdmin,
   });
 
   // Fetch all nominations for progress calculation
@@ -96,7 +97,7 @@ export default function AdminPartners() {
     queryFn: async () => {
       return nominationsService.getAll();
     },
-    enabled: isSuperAdmin,
+    enabled: isAdmin,
   });
 
   // Fetch all partner progress from view
@@ -105,7 +106,7 @@ export default function AdminPartners() {
     queryFn: async () => {
       return partnerProgressService.getAll();
     },
-    enabled: isSuperAdmin,
+    enabled: isAdmin,
   });
 
   // Create a map of partner_id -> progress
@@ -141,27 +142,45 @@ export default function AdminPartners() {
     },
   });
 
-  // Filter partners by search query
-  const filteredPartners = partners.filter(partner =>
-    partner.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    partner.tier?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    partner.contract_status?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    partner.assigned_account_manager?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filter partners by search query (name, email, domain, tier, account manager)
+  const filteredPartners = useMemo(() => {
+    if (!searchQuery.trim()) return partners;
+    
+    const query = searchQuery.toLowerCase();
+    return partners.filter(partner => {
+      const nameMatch = partner.name?.toLowerCase().includes(query);
+      const tierMatch = partner.tier?.toLowerCase().includes(query);
+      const statusMatch = partner.contract_status?.toLowerCase().includes(query);
+      const managerMatch = partner.assigned_account_manager?.toLowerCase().includes(query);
+      
+      // Check partner users for email match
+      const partnerUsers = allPartnerUsers.filter(u => u.partner_id === partner.id);
+      const emailMatch = partnerUsers.some(u => u.email?.toLowerCase().includes(query));
+      
+      // Check domain (extract from email or website)
+      const domainMatch = partnerUsers.some(u => {
+        const email = u.email?.toLowerCase() || '';
+        const domain = email.split('@')[1] || '';
+        return domain.includes(query);
+      }) || partner.website?.toLowerCase().includes(query);
+      
+      return nameMatch || tierMatch || statusMatch || managerMatch || emailMatch || domainMatch;
+    });
+  }, [partners, searchQuery, allPartnerUsers]);
 
   // Get partner user count
   const getPartnerUserCount = (partnerId) => {
     return allPartnerUsers.filter(u => u.partner_id === partnerId).length;
   };
 
-  if (!isSuperAdmin) {
+  if (!isAdmin) {
     return (
       <div className="p-6">
         <Card>
           <CardContent className="p-6 text-center">
             <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
             <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
-            <p className="text-gray-600">You need superadmin privileges to access this page.</p>
+            <p className="text-gray-600">You need admin privileges to access this page.</p>
           </CardContent>
         </Card>
       </div>
@@ -225,10 +244,9 @@ export default function AdminPartners() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Tier</TableHead>
-                  <TableHead>Contract Status</TableHead>
                   <TableHead>Account Manager</TableHead>
-                  <TableHead>Users</TableHead>
-                  <TableHead>Progress</TableHead>
+                  <TableHead>Created Date</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -256,6 +274,18 @@ export default function AdminPartners() {
                         <Badge variant="outline">{partner.tier || "N/A"}</Badge>
                       </TableCell>
                       <TableCell>
+                        {partner.assigned_account_manager || "Unassigned"}
+                      </TableCell>
+                      <TableCell>
+                        {partner.created_at 
+                          ? new Date(partner.created_at).toLocaleDateString('en-US', { 
+                              year: 'numeric', 
+                              month: 'short', 
+                              day: 'numeric' 
+                            })
+                          : "N/A"}
+                      </TableCell>
+                      <TableCell>
                         <Badge 
                           variant={
                             partner.contract_status === 'Signed' ? 'default' :
@@ -266,35 +296,6 @@ export default function AdminPartners() {
                           {partner.contract_status || "Pending"}
                         </Badge>
                       </TableCell>
-                      <TableCell>
-                        {partner.assigned_account_manager || "Unassigned"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Users className="w-4 h-4 text-gray-400" />
-                          <span>{userCount}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-gray-200 rounded-full h-2">
-                            <div 
-                              className={`h-2 rounded-full ${
-                                progress >= 75 ? 'bg-green-500' :
-                                progress >= 50 ? 'bg-yellow-500' :
-                                'bg-orange-500'
-                              }`}
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
-                          <span className="text-sm font-medium w-12 text-right">{progress}%</span>
-                        </div>
-                        {progressData && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            {progressData.approved_submissions ?? 0} / {progressData.total_deliverables ?? 0} completed
-                          </p>
-                        )}
-                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
                           <Button
@@ -303,7 +304,7 @@ export default function AdminPartners() {
                             onClick={() => navigate(`/admin/partners/${partner.id}/edit`)}
                           >
                             <Edit className="w-4 h-4 mr-2" />
-                            Edit
+                            View / Edit
                           </Button>
                           <Button
                             variant="destructive"

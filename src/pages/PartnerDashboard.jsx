@@ -22,7 +22,8 @@ import {
   ArrowRight,
   Upload,
   TrendingUp,
-  Building2
+  Building2,
+  Image as ImageIcon
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
@@ -80,36 +81,271 @@ export default function PartnerDashboard() {
     };
   };
 
-  // Show placeholder content for partner dashboard
+  // Show partner dashboard with tiles
+  if (!partnerId) {
+    return (
+      <div className="p-4 md:p-8 max-w-7xl mx-auto">
+        <Card className="border-red-200">
+          <CardContent className="p-12 text-center">
+            <UserCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No Partner Profile Found</h3>
+            <p className="text-gray-600">
+              Please contact the SEF team to set up your partner account.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-center"
+        className="space-y-6"
       >
-        <Card className="border-2 border-orange-200 shadow-xl">
-          <CardContent className="p-12">
-            <div className="w-24 h-24 bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Building2 className="w-12 h-12 text-white" />
-            </div>
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">
-              Welcome to the Partner Hub
-            </h1>
-            <p className="text-xl text-gray-600 mb-8">
-              More features will appear soon
-            </p>
-            <div className="flex justify-center gap-4">
-              <Button
-                onClick={() => navigate('/PartnerHub')}
-                className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700"
-              >
-                Go to Partner Hub
-                <ArrowRight className="ml-2 w-4 h-4" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            Welcome back, {user?.full_name || 'Partner'}!
+          </h1>
+          <p className="text-gray-600">
+            Here's your partnership overview and quick access to key features.
+          </p>
+        </div>
+
+        {/* Dashboard Tiles */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Company Profile Tile */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -4 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <Card 
+              className="border-orange-200 hover:border-orange-300 transition-all cursor-pointer h-full"
+              onClick={() => navigate('/PartnerHub?tab=profile')}
+            >
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-orange-100 rounded-lg">
+                    <Building2 className="w-6 h-6 text-orange-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900 mb-1">Company Profile</h3>
+                    <p className="text-sm text-gray-600">View and edit company information</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  className="w-full border-orange-200 hover:bg-orange-50"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate('/PartnerHub?tab=profile');
+                  }}
+                >
+                  View Profile <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Contacts Tile */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -4 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <Card 
+              className="border-orange-200 hover:border-orange-300 transition-all cursor-pointer h-full"
+              onClick={() => navigate('/PartnerHub?tab=contacts')}
+            >
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-orange-100 rounded-lg">
+                    <UserCircle className="w-6 h-6 text-orange-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900 mb-1">Contacts</h3>
+                    <p className="text-sm text-gray-600">Manage contact points</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  className="w-full border-orange-200 hover:bg-orange-50"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate('/PartnerHub?tab=contacts');
+                  }}
+                >
+                  View Contacts <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Approvals & Submissions Tile */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -4 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <Card 
+              className="border-orange-200 hover:border-orange-300 transition-all cursor-pointer h-full"
+              onClick={() => navigate('/deliverables')}
+            >
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-orange-100 rounded-lg">
+                    <CheckCircle className="w-6 h-6 text-orange-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900 mb-1">Approvals & Submissions</h3>
+                    <p className="text-sm text-gray-600">Track deliverable status</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  className="w-full border-orange-200 hover:bg-orange-50"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate('/deliverables');
+                  }}
+                >
+                  View Deliverables <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Media & Branding Tile */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -4 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <Card 
+              className="border-orange-200 hover:border-orange-300 transition-all cursor-pointer h-full"
+              onClick={() => navigate('/PartnerHub?tab=media')}
+            >
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-orange-100 rounded-lg">
+                    <ImageIcon className="w-6 h-6 text-orange-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900 mb-1">Media & Branding</h3>
+                    <p className="text-sm text-gray-600">Upload logos and assets</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  className="w-full border-orange-200 hover:bg-orange-50"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate('/PartnerHub?tab=media');
+                  }}
+                >
+                  View Media <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Nominations Tile */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -4 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <Card 
+              className="border-orange-200 hover:border-orange-300 transition-all cursor-pointer h-full"
+              onClick={() => navigate('/Nominations')}
+            >
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-orange-100 rounded-lg">
+                    <Award className="w-6 h-6 text-orange-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900 mb-1">Nominations</h3>
+                    <p className="text-sm text-gray-600">Submit speaker and startup nominations</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  className="w-full border-orange-200 hover:bg-orange-50"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate('/Nominations');
+                  }}
+                >
+                  View Nominations <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Partner Hub Tile */}
+          <motion.div
+            whileHover={{ scale: 1.02, y: -4 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <Card 
+              className="border-orange-200 hover:border-orange-300 transition-all cursor-pointer h-full bg-gradient-to-br from-orange-50 to-amber-50"
+              onClick={() => navigate('/PartnerHub')}
+            >
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-orange-200 rounded-lg">
+                    <Building2 className="w-6 h-6 text-orange-700" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900 mb-1">Partner Hub</h3>
+                    <p className="text-sm text-gray-600">Access all partner features</p>
+                  </div>
+                </div>
+                <Button
+                  className="w-full bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate('/PartnerHub');
+                  }}
+                >
+                  Open Partner Hub <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
+
+        {/* Progress Section */}
+        {progress && (
+          <Card className="border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 shadow-lg">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-2xl flex items-center gap-3">
+                  <TrendingUp className="w-6 h-6 text-orange-600" />
+                  Partnership Progress
+                </CardTitle>
+                <Badge variant="outline" className="bg-white text-orange-700 border-orange-300 text-lg px-4 py-1">
+                  {progressPercentage.toFixed(0)}% Complete
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">
+                      {approvedCount} of {totalCount} deliverables approved
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {totalCount - approvedCount} remaining
+                    </span>
+                  </div>
+                  <Progress value={progressPercentage} className="h-4" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </motion.div>
     </div>
   );

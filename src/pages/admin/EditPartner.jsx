@@ -69,15 +69,17 @@ export default function EditPartner() {
   const queryClient = useQueryClient();
   const isNew = id === 'new';
 
-  const isSuperAdmin = user?.role === 'sef_admin' || user?.is_super_admin;
+  const { role } = useAuth();
+  const isSuperAdmin = role === 'superadmin';
+  const isAdmin = role === 'admin' || isSuperAdmin;
 
-  // Redirect if not superadmin
+  // Redirect if not admin or superadmin
   React.useEffect(() => {
-    if (user && !isSuperAdmin) {
-      toast.error("Access denied. Superadmin only.");
+    if (user && !isAdmin) {
+      toast.error("Access denied. Admin access required.");
       navigate("/Dashboard");
     }
-  }, [user, isSuperAdmin, navigate]);
+  }, [user, isAdmin, navigate]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -305,17 +307,20 @@ export default function EditPartner() {
       </div>
 
       <form onSubmit={handleSubmit}>
-        <Tabs defaultValue="basic" className="space-y-6">
+        <Tabs defaultValue="profile" className="space-y-6">
           <TabsList>
-            <TabsTrigger value="basic">Basic Information</TabsTrigger>
-            <TabsTrigger value="contacts">POC Contacts</TabsTrigger>
+            <TabsTrigger value="profile">Profile</TabsTrigger>
+            <TabsTrigger value="contacts">Contacts</TabsTrigger>
+            <TabsTrigger value="deliverables">Deliverables</TabsTrigger>
+            <TabsTrigger value="branding">Branding</TabsTrigger>
+            <TabsTrigger value="nominations">Nominations</TabsTrigger>
             <TabsTrigger value="belong_plus">BELONG+ Allocations</TabsTrigger>
             <TabsTrigger value="features">Feature Visibility</TabsTrigger>
             <TabsTrigger value="modules">Module Visibility</TabsTrigger>
           </TabsList>
 
-          {/* Basic Information Tab */}
-          <TabsContent value="basic">
+          {/* Profile Tab */}
+          <TabsContent value="profile">
             <Card>
               <CardHeader>
                 <CardTitle>Basic Information</CardTitle>
@@ -548,6 +553,108 @@ export default function EditPartner() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* Deliverables Tab */}
+          <TabsContent value="deliverables">
+            <Card>
+              <CardHeader>
+                <CardTitle>Deliverables</CardTitle>
+                <p className="text-sm text-gray-600 mt-2">
+                  View and manage deliverables for this partner.
+                </p>
+              </CardHeader>
+              <CardContent>
+                {!isNew && id ? (
+                  <div className="space-y-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => window.open(`/admin/deliverables-review?partnerId=${id}`, '_blank')}
+                    >
+                      View All Deliverables
+                    </Button>
+                    <p className="text-sm text-gray-500">
+                      Click to view all deliverables and submissions for this partner in a new tab.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    Save the partner first to view deliverables.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Branding Tab */}
+          <TabsContent value="branding">
+            <Card>
+              <CardHeader>
+                <CardTitle>Branding & Media</CardTitle>
+                <p className="text-sm text-gray-600 mt-2">
+                  Manage branding assets and media for this partner.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="logo_url">Logo URL</Label>
+                  <Input
+                    id="logo_url"
+                    type="url"
+                    value={formData.logo_url}
+                    onChange={(e) => setFormData(prev => ({ ...prev, logo_url: e.target.value }))}
+                    placeholder="https://example.com/logo.png"
+                  />
+                </div>
+                {!isNew && id ? (
+                  <div className="space-y-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => window.open(`/PartnerHub?tab=media&viewAs=${id}`, '_blank')}
+                    >
+                      View Media Hub
+                    </Button>
+                    <p className="text-sm text-gray-500">
+                      Click to view all media and branding assets for this partner in PartnerHub.
+                    </p>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Nominations Tab */}
+          <TabsContent value="nominations">
+            <Card>
+              <CardHeader>
+                <CardTitle>Nominations</CardTitle>
+                <p className="text-sm text-gray-600 mt-2">
+                  View and manage nominations submitted by this partner.
+                </p>
+              </CardHeader>
+              <CardContent>
+                {!isNew && id ? (
+                  <div className="space-y-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => window.open(`/Nominations?partnerId=${id}`, '_blank')}
+                    >
+                      View All Nominations
+                    </Button>
+                    <p className="text-sm text-gray-500">
+                      Click to view all nominations submitted by this partner in a new tab.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    Save the partner first to view nominations.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* BELONG+ Allocations Tab */}

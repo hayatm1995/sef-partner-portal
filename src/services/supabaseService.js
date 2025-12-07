@@ -623,6 +623,22 @@ export const activityLogService = {
     if (error) throw error;
     return data;
   },
+
+  // Get all activity logs (admin only) - recent activity
+  getAll: async (limit = 10) => {
+    const { data, error } = await supabase
+      .from('activity_log')
+      .select(`
+        *,
+        partner:partners(id, name),
+        user:partner_users(id, full_name, email)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    
+    if (error) throw error;
+    return data || [];
+  },
 };
 
 // ============================================

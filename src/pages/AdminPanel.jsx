@@ -35,7 +35,7 @@ import AdminNotifications from "../components/admin/AdminNotifications";
 import VIPInvitationStatusManager from "../components/admin/VIPInvitationStatusManager";
 
 export default function AdminPanel() {
-  const [activeTab, setActiveTab] = useState("deliverables");
+  const [activeTab, setActiveTab] = useState("dashboard");
   const queryClient = useQueryClient();
   const { role } = useAuth();
   const isAdmin = role === 'admin' || role === 'superadmin';
