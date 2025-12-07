@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { deliverablesService, partnersService, activityLogService, partnerSubmissionsService } from "@/services/supabaseService";
+import { supabase } from "@/config/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -133,9 +134,16 @@ export default function Approvals() {
 
       // Update submission status if exists
       if (submissionId) {
+        // Get partner_user id for reviewed_by
+        const { data: partnerUser } = await supabase
+          .from('partner_users')
+          .select('id')
+          .eq('auth_user_id', user?.id)
+          .single();
+        
         await partnerSubmissionsService.update(submissionId, {
           status: 'approved',
-          reviewed_by: user?.id
+          reviewed_by: partnerUser?.id || null
         });
       }
 
@@ -193,19 +201,33 @@ export default function Approvals() {
 
       // Update submission status if exists
       if (submissionId) {
+        // Get partner_user id for reviewed_by
+        const { data: partnerUser } = await supabase
+          .from('partner_users')
+          .select('id')
+          .eq('auth_user_id', user?.id)
+          .single();
+        
         await partnerSubmissionsService.update(submissionId, {
           status: 'rejected',
           rejection_reason: reason,
-          reviewed_by: user?.id
+          reviewed_by: partnerUser?.id || null
         });
       }
 
       // Log activity
       const deliverable = pendingDeliverables.find(d => d.id === deliverableId);
       if (deliverable && deliverable.partner_id) {
+        // Get partner_user id for user_id
+        const { data: partnerUser } = await supabase
+          .from('partner_users')
+          .select('id')
+          .eq('auth_user_id', user?.id)
+          .single();
+        
         await activityLogService.create({
           partner_id: deliverable.partner_id,
-          user_id: user?.id,
+          user_id: partnerUser?.id || null,
           activity_type: 'deliverable_rejected',
           description: `Deliverable "${deliverable.name}" rejected: ${reason}`,
           metadata: {
