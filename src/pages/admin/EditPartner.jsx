@@ -183,6 +183,7 @@ export default function EditPartner() {
         belong_plus_opening_ceremony_allocation: partner.belong_plus_opening_ceremony_allocation || 0,
         belong_plus_sef_vault_allocation: partner.belong_plus_sef_vault_allocation || 0,
         belong_plus_closing_ceremony_allocation: partner.belong_plus_closing_ceremony_allocation || 0,
+        internal_notes: partner.internal_notes || "",
         features: featuresMap,
       });
     } else if (isNew) {
@@ -314,6 +315,7 @@ export default function EditPartner() {
             <TabsTrigger value="deliverables">Deliverables</TabsTrigger>
             <TabsTrigger value="branding">Branding</TabsTrigger>
             <TabsTrigger value="nominations">Nominations</TabsTrigger>
+            <TabsTrigger value="notes">Notes</TabsTrigger>
             <TabsTrigger value="belong_plus">BELONG+ Allocations</TabsTrigger>
             <TabsTrigger value="features">Feature Visibility</TabsTrigger>
             <TabsTrigger value="modules">Module Visibility</TabsTrigger>
@@ -653,6 +655,35 @@ export default function EditPartner() {
                     Save the partner first to view nominations.
                   </p>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Notes Tab */}
+          <TabsContent value="notes">
+            <Card>
+              <CardHeader>
+                <CardTitle>Internal Notes</CardTitle>
+                <p className="text-sm text-gray-600 mt-2">
+                  Internal notes for admin use only. These notes are not visible to partners.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="internal_notes">Notes</Label>
+                    <Textarea
+                      id="internal_notes"
+                      value={formData.internal_notes || ""}
+                      onChange={(e) => setFormData(prev => ({ ...prev, internal_notes: e.target.value }))}
+                      placeholder="Add internal notes about this partner..."
+                      rows={10}
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                      Use this space to record important information, reminders, or communication history.
+                    </p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

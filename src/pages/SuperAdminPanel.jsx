@@ -300,8 +300,145 @@ export default function SuperAdminPanel() {
           </CardContent>
         </Card>
 
-        {/* Super Admin Users Table */}
-        {superAdminUsers.length > 0 && (
+        {/* All Users Table - Unified View */}
+        <Card className="mb-6 border-purple-100 shadow-md">
+          <CardHeader>
+            <CardTitle>All Users ({filteredUsers.length})</CardTitle>
+            <p className="text-sm text-gray-600 mt-2">
+              Manage all users from partner_users table. Hide self from disable actions.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Full Name</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Partner</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredUsers.map((user) => {
+                    const roleBadge = getRoleBadge(user.role);
+                    const isCurrentUser = user.auth_user_id === authUser?.id;
+                    const isSuperAdminUser = user.role === 'superadmin';
+                    const partnerName = user.partners?.name || 'N/A';
+                    const isDisabled = user.soft_disabled === true;
+                    
+                    return (
+                      <TableRow key={user.id} className={isDisabled ? 'opacity-50' : ''}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            {user.full_name}
+                            {isDisabled && (
+                              <Badge variant="outline" className="text-xs bg-gray-100 text-gray-600">
+                                Disabled
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{user.email}</TableCell>
+                        <TableCell>
+                          <Badge className={roleBadge.color}>{roleBadge.label}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm text-gray-600">{partnerName}</span>
+                        </TableCell>
+                        <TableCell>
+                          {isDisabled ? (
+                            <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                              Disabled
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                              Active
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {/* Enable/Disable Button */}
+                            {!isCurrentUser && !isSuperAdminUser && (
+                              <Button
+                                variant={isDisabled ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => {
+                                  const newStatus = !isDisabled;
+                                  partnerUsersService.update(user.id, { soft_disabled: newStatus })
+                                    .then(() => {
+                                      queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+                                      toast.success(`User ${newStatus ? 'disabled' : 'enabled'} successfully`);
+                                    })
+                                    .catch((error) => {
+                                      toast.error('Failed to update user: ' + error.message);
+                                    });
+                                }}
+                                className={isDisabled ? "bg-green-600 hover:bg-green-700" : "border-red-200 text-red-600 hover:bg-red-50"}
+                              >
+                                {isDisabled ? 'Enable' : 'Disable'}
+                              </Button>
+                            )}
+                            
+                            {/* Role Change - Only superadmin can change roles, and only partner → admin */}
+                            {isSuperAdmin && !isCurrentUser && (
+                              <Select
+                                value={user.role === 'superadmin' ? "superadmin" : user.role || "partner"}
+                                onValueChange={(newRole) => {
+                                  // Only allow partner → admin for non-superadmin users
+                                  if (user.role === 'superadmin') {
+                                    toast.error('Cannot change superadmin role');
+                                    return;
+                                  }
+                                  if (newRole === 'superadmin' && user.role !== 'superadmin') {
+                                    toast.error('Only superadmins can be assigned superadmin role');
+                                    return;
+                                  }
+                                  updateUserRoleMutation.mutate({ 
+                                    userId: user.id, 
+                                    newRole: newRole === 'super_admin' ? 'superadmin' : newRole 
+                                  });
+                                }}
+                                disabled={isSuperAdminUser}
+                              >
+                                <SelectTrigger className="w-32">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {isSuperAdmin && <SelectItem value="superadmin">Super Admin</SelectItem>}
+                                  <SelectItem value="admin">Admin</SelectItem>
+                                  <SelectItem value="partner">Partner</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            )}
+                            
+                            {/* Delete Button - Hide for current user and superadmins */}
+                            {!isCurrentUser && !isSuperAdminUser && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDeleteUser(user)}
+                                className="text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Legacy Tables - Keep for reference but hide */}
+        {false && superAdminUsers.length > 0 && (
           <Card className="mb-6 border-purple-100 shadow-md">
             <CardHeader>
               <CardTitle>Superadmin Users ({superAdminUsers.length})</CardTitle>
@@ -385,8 +522,7 @@ export default function SuperAdminPanel() {
           </Card>
         )}
 
-        {/* Admin Users Table */}
-        {adminUsers.length > 0 && (
+        {false && adminUsers.length > 0 && (
           <Card className="mb-6 border-blue-100 shadow-md">
             <CardHeader>
               <CardTitle>Admin Users ({adminUsers.length})</CardTitle>

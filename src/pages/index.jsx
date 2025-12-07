@@ -70,6 +70,7 @@ import EmailInvitations from "./EmailInvitations";
 import SendEmail from "./SendEmail";
 
 import AdminApprovals from "./AdminApprovals";
+import Approvals from "./admin/Approvals";
 
 import ApprovalReview from "./ApprovalReview";
 
@@ -190,6 +191,7 @@ const PAGES = {
     SendEmail: SendEmail,
     
     AdminApprovals: AdminApprovals,
+    Approvals: Approvals,
     
     ApprovalReview: ApprovalReview,
     
@@ -493,6 +495,7 @@ function PagesContent() {
                                         <Route path="contracts" element={<AdminContracts />} />
                                         <Route path="users" element={<AdminUsers />} />
                                         <Route path="invite-partner" element={<InvitePartner />} />
+                                        <Route path="approvals" element={<Approvals />} />
                                     </Routes>
                                 </RoleGuard>
                             } />

@@ -619,7 +619,7 @@ export default function Layout({ children, currentPageName }) {
     { title: "Review Deliverables", url: "/admin/deliverables-review", icon: ShieldCheck },
     { title: "User Management", url: "/admin/users", icon: Users },
     { title: "Requirements", url: createPageUrl("AdminRequirements"), icon: ClipboardList },
-    { title: "Approvals System", url: createPageUrl("AdminApprovals"), icon: CheckSquare },
+    { title: "Approvals System", url: "/admin/approvals", icon: CheckSquare },
     { title: "VIP Invitations", url: "/admin/vip-invitations", icon: Users },
     { title: "Send Email", url: createPageUrl("SendEmail"), icon: Mail },
     { title: "Admin Panel", url: createPageUrl("AdminPanel"), icon: Shield },
