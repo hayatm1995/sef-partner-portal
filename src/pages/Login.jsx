@@ -22,22 +22,22 @@ export default function Login() {
   const { login, loginWithMagicLink, loginWithGoogle, loginWithMicrosoft, loginAsTestUser, user, role, viewMode } = useAuth();
 
   // Helper function to get redirect URL based on role
-  // Updated to use proper dashboard routes: /admin/dashboard and /partner/dashboard
+  // Role-based landing pages:
+  // - superadmin → /superadmin/dashboard
+  // - admin → /admin/dashboard  
+  // - partner → /PartnerHub
   const getRedirectUrl = React.useCallback((userRole) => {
     if (!userRole) return '/Login';
     
-    // STRICT role-based routing:
-    // - superadmin → /admin/dashboard
-    // - admin → /admin/dashboard  
-    // - partner → /partner/dashboard
+    // STRICT role-based routing
     if (userRole === 'superadmin' || userRole === 'sef_admin') {
-      return '/admin/dashboard';
+      return '/superadmin/dashboard';
     }
     if (userRole === 'admin') {
       return '/admin/dashboard';
     }
     if (userRole === 'partner') {
-      return '/partner/dashboard';
+      return '/PartnerHub';
     }
     
     // Fallback to login if role is invalid

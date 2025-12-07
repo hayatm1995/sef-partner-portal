@@ -70,7 +70,8 @@ import {
   Key,
   Building2,
   UserPlus,
-  ShieldCheck
+  ShieldCheck,
+  UserCog
 } from "lucide-react";
 import SupportAgentChat from "@/components/support/SupportAgentChat";
 import GlobalNotificationBell from "@/components/notifications/GlobalNotificationBell";
@@ -627,53 +628,49 @@ export default function Layout({ children, currentPageName }) {
     return sections;
   };
 
+  // Admin navigation items - visible to admin users (not superadmin-exclusive)
   const adminBaseNavItems = [
     { title: "Manage Partners", url: "/admin/partners", icon: Users },
     { title: "Invite Partner", url: "/admin/invite-partner", icon: UserPlus },
+    { title: "Review Deliverables", url: "/admin/deliverables-review", icon: ShieldCheck },
+    { title: "Approvals System", url: "/admin/approvals", icon: CheckSquare },
     { title: "Support Messages", url: "/admin/support", icon: MessageCircle, badge: adminSupportUnread > 0 ? adminSupportUnread : null },
     { title: "Exhibitor Stands", url: "/admin/booths", icon: Building2 },
     { title: "Contracts", url: "/admin/contracts", icon: Briefcase },
-    { title: "Review Deliverables", url: "/admin/deliverables-review", icon: ShieldCheck },
     { title: "User Management", url: "/admin/users", icon: Users },
     { title: "Requirements", url: createPageUrl("AdminRequirements"), icon: ClipboardList },
-    { title: "Approvals System", url: "/admin/approvals", icon: CheckSquare },
-    { title: "VIP Invitations", url: "/admin/vip-invitations", icon: Users },
-    { title: "Send Email", url: createPageUrl("SendEmail"), icon: Mail },
-    { title: "Email Invitations", url: createPageUrl("EmailInvitations"), icon: Mail },
-    { title: "Email Test", url: createPageUrl("EmailTest"), icon: Mail },
   ];
 
   // Admin Panel section (separate group)
   const adminPanelNavItems = [
-    { title: "Admin Dashboard", url: createPageUrl("Dashboard"), icon: LayoutDashboard },
-    { title: "Admin Panel", url: createPageUrl("AdminPanel"), icon: Shield },
+    { title: "Admin Dashboard", url: "/admin/dashboard", icon: LayoutDashboard },
   ];
 
+  // Superadmin-only navigation items
+  const superadminOnlyNavItems = [];
+  
   if (isSuperAdmin) {
-    adminBaseNavItems.push({
-      title: "Admin Partners",
-      url: "/admin/partners",
+    // Add superadmin-exclusive items
+    superadminOnlyNavItems.push({
+      title: "Admin Command Center",
+      url: createPageUrl("SuperAdminPanel"),
+      icon: Shield,
+    });
+    superadminOnlyNavItems.push({
+      title: "VIP Invitations",
+      url: "/admin/vip-invitations",
       icon: Users,
     });
-    adminBaseNavItems.push({
-      title: "Deliverables Review",
-      url: "/admin/deliverables",
-      icon: FileText,
-      
+    superadminOnlyNavItems.push({
+      title: "System Analytics",
+      url: "/superadmin/control-room",
+      icon: BarChart3,
     });
-    adminBaseNavItems.push({
-      title: "Submissions Review",
-      url: "/admin/submissions",
-      icon: CheckSquare,
+    superadminOnlyNavItems.push({
+      title: "Manage Admins",
+      url: "/admin/users",
+      icon: UserCog,
     });
-    // Admin Command Center - only show if not viewing as partner
-    if (!effectiveViewingAsPartnerId) {
-      adminBaseNavItems.push({
-        title: "Admin Command Center",
-        url: createPageUrl("SuperAdminPanel"),
-        icon: Shield,
-      });
-    }
   }
 
   const visibleModules = currentPartner?.visible_modules || [];
@@ -720,6 +717,7 @@ export default function Layout({ children, currentPageName }) {
   // "View as Partner" button works without changing actual role - it's just a view mode
   const adminNavItems = (isAdmin && !effectiveViewingAsPartnerId) ? adminBaseNavItems : [];
   const adminPanelNavItemsDisplay = (isAdmin && !effectiveViewingAsPartnerId) ? adminPanelNavItems : [];
+  const superadminNavItemsDisplay = (isSuperAdmin && !effectiveViewingAsPartnerId) ? superadminOnlyNavItems : [];
 
   const { logout } = useAuth();
   
@@ -798,6 +796,33 @@ export default function Layout({ children, currentPageName }) {
               />
             )}
 
+            {/* Admin Panel Section - Separate Group (Dashboard + Admin Panel) */}
+            {isAdmin && adminPanelNavItemsDisplay.length > 0 && (
+              <SidebarGroup>
+                <SidebarGroupLabel>Admin Panel</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {adminPanelNavItemsDisplay.map((item) => {
+                      const isActive = item.url.startsWith('/admin') 
+                        ? location.pathname.startsWith(item.url)
+                        : currentPageName === item.title;
+                      
+                      return (
+                        <SidebarMenuItem key={item.title}>
+                          <SidebarMenuButton asChild isActive={isActive}>
+                            <Link to={item.url}>
+                              <item.icon />
+                              <span className="flex-1">{item.title}</span>
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            )}
+
             {/* Admin Nav Items - STRICT: Only show for admin/superadmin */}
             {isAdmin && adminNavItems.length > 0 && (
               <SidebarGroup>
@@ -831,23 +856,28 @@ export default function Layout({ children, currentPageName }) {
               </SidebarGroup>
             )}
 
-            {/* Control Room - Superadmin Only */}
-            {isSuperAdmin && !effectiveViewingAsPartnerId && (
+            {/* Superadmin-Only Navigation Items */}
+            {isSuperAdmin && superadminNavItemsDisplay.length > 0 && (
               <SidebarGroup>
                 <SidebarGroupLabel>Superadmin</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    <SidebarMenuItem>
-                      <SidebarMenuButton 
-                        asChild 
-                        isActive={location.pathname.startsWith('/superadmin/control-room')}
-                      >
-                        <Link to="/superadmin/control-room">
-                          <BarChart3 />
-                          <span className="flex-1">Control Room</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
+                    {superadminNavItemsDisplay.map((item) => {
+                      const isActive = item.url.startsWith('/superadmin') || item.url.startsWith('/admin')
+                        ? location.pathname.startsWith(item.url)
+                        : currentPageName === item.title;
+                      
+                      return (
+                        <SidebarMenuItem key={item.title}>
+                          <SidebarMenuButton asChild isActive={isActive}>
+                            <Link to={item.url}>
+                              <item.icon />
+                              <span className="flex-1">{item.title}</span>
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>

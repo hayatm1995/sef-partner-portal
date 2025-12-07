@@ -355,12 +355,14 @@ function PagesContent() {
             <RouteGuard>
                 <Layout currentPageName={currentPage}>
                     <Routes>
-                        {/* Root route - show landing page for unauthenticated, redirect for authenticated */}
+                        {/* Root route - redirect based on role */}
                         <Route path="/" element={
-                            userIsSuperadmin || userRole === 'admin'
+                            userIsSuperadmin 
+                                ? <Navigate to="/superadmin/dashboard" replace />
+                                : userIsAdmin
                                 ? <Navigate to="/admin/dashboard" replace /> 
                                 : userIsPartner
-                                ? <Navigate to="/partner/dashboard" replace />
+                                ? <Navigate to="/PartnerHub" replace />
                                 : <Landing />
                         } />
                         <Route path="/Unauthorized" element={<Unauthorized />} />
@@ -374,7 +376,7 @@ function PagesContent() {
                             <Route path="/partner/deliverables" element={<PartnerDeliverables />} />
                             
                             {/* Legacy routes - redirect to new partner routes */}
-                            <Route path="/Dashboard" element={<Navigate to="/partner/dashboard" replace />} />
+                            <Route path="/Dashboard" element={<Navigate to="/PartnerHub" replace />} />
                             
                             {/* Legacy/Shared Routes */}
                             {/* Partner-only routes - only accessible when NOT viewing as admin */}
@@ -511,6 +513,7 @@ function PagesContent() {
                     {userIsSuperadmin && (
                         <Route path="/superadmin/*" element={
                             <Routes>
+                                <Route path="dashboard" element={<Dashboard />} />
                                 <Route path="control-room" element={<ControlRoom />} />
                             </Routes>
                         } />
