@@ -12,67 +12,61 @@ import { sendMagicLinkInvite } from '@/services/emailService';
 import { motion } from 'framer-motion';
 
 export default function InvitePartner() {
-  const { user } = useAuth();
+  const { user, role, loading } = useAuth();
   const [partnerName, setPartnerName] = useState('');
   const [partnerEmail, setPartnerEmail] = useState('');
 
-  // Check if user is admin
-  const isAdmin = user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin;
+  // Wait for role to be loaded before checking access
+  if (loading || !role) {
+    return (
+      <div className="p-4 md:p-8 max-w-7xl mx-auto">
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Loader2 className="w-8 h-8 animate-spin text-orange-600 mx-auto mb-4" />
+            <p className="text-gray-600">Loading...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Check if user is admin - use role from context (already resolved from database)
+  const userRole = role || user?.role || 'partner';
+  const isAdmin = userRole === 'admin' || userRole === 'superadmin' || userRole === 'sef_admin' || user?.is_super_admin;
 
   const invitePartnerMutation = useMutation({
     mutationFn: async (data) => {
       const { name, email } = data;
       
-      const { data: { session } } = await supabase.auth.getSession();
-      const accessToken = session?.access_token;
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
 
-      if (!accessToken) {
-        throw new Error('Not authenticated. Please log in again.');
+      const { data, error } = await supabase.functions.invoke('invite-partner', {
+        body: { name, email },
+        headers: {
+          Authorization: `Bearer ${session?.access_token}`
+        }
+      });
+
+      if (error) {
+        console.error('Error inviting partner:', error);
+        toast.error(error.message || 'Failed to send invite');
+        throw error;
+      } else {
+        toast.success('Invite sent!');
       }
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/invite-partner`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            name: data.name,
-            email: data.email,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = `Invite failed: ${response.statusText}`;
-        try {
-          const errorData = JSON.parse(errorText);
-          errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
-          errorMessage = errorText || errorMessage;
-        }
-        throw new Error(errorMessage);
-      }
-
-      return await response.json();
+      return data;
     },
     onSuccess: () => {
-      toast.success('Invitation sent successfully!', {
-        description: 'The partner will receive an email with instructions to access the portal.',
-        icon: <CheckCircle className="w-5 h-5" />,
-      });
       // Reset form
       setPartnerName('');
       setPartnerEmail('');
     },
     onError: (error) => {
+      // Error already handled in mutationFn with toast
       console.error('Error inviting partner:', error);
-      toast.error('Failed to send invitation', {
-        description: error.message || 'An error occurred while sending the invitation email.',
-      });
     },
   });
 

@@ -180,18 +180,6 @@ serve(async (req) => {
   }
 
   try {
-    // Get authorization header
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Missing authorization header" }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
     // Initialize Supabase client with service role
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -213,43 +201,27 @@ serve(async (req) => {
       },
     });
 
-    // Verify the requesting user is admin/superadmin
-    const token = authHeader.replace("Bearer ", "");
-    const {
-      data: { user: requestingUser },
-      error: userError,
-    } = await supabaseAdmin.auth.getUser(token);
+    // Authorization validation
+    const authHeader = req.headers.get("authorization");
+    const token = authHeader?.replace("Bearer ", "");
 
-    if (userError || !requestingUser) {
-      return new Response(
-        JSON.stringify({ error: "Invalid authentication" }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+    if (!token) {
+      return new Response(JSON.stringify({ error: "Missing auth token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // Get requesting user's role from partner_users
-    const { data: requestingPartnerUser } = await supabaseAdmin
-      .from("partner_users")
-      .select("role")
-      .eq("auth_user_id", requestingUser.id)
-      .single();
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
 
-    const requestingRole = requestingPartnerUser?.role || "viewer";
-    const isSuperAdmin = requestingRole === "sef_admin";
-    const isAdmin = requestingRole === "admin" || isSuperAdmin;
-
-    if (!isAdmin) {
-      return new Response(
-        JSON.stringify({ error: "Admin access required" }),
-        {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+    if (userError || user?.app_metadata?.role !== "superadmin") {
+      return new Response(JSON.stringify({ error: "Admin access required" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
+
+    const requestingUser = user;
 
     // Parse request body
     const { email, name } = await req.json();
