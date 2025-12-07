@@ -311,26 +311,42 @@ serve(async (req) => {
     // Use provided name or extract from email
     const companyName = name.includes('@') ? name.split('@')[0] : name;
     
-    // Check if partner already exists (by primary_email or name)
-    const { data: existingPartner } = await supabaseAdmin
-      .from("partners")
-      .select("id, name")
-      .or(`primary_email.eq.${email},name.ilike.%${companyName}%`)
-      .limit(1)
+    // Check if partner already exists (by name or by checking partner_users with this email)
+    // First check if there's a partner_users entry with this email
+    const { data: existingPartnerUserByEmail } = await supabaseAdmin
+      .from("partner_users")
+      .select("partner_id")
+      .eq("email", email)
       .maybeSingle();
 
     let partnerId: string | null = null;
+    let existingPartner: { id: string } | null = null;
 
-    if (existingPartner?.id) {
-      partnerId = existingPartner.id;
-      // Update primary_email if not set
-      if (!existingPartner.primary_email) {
-        await supabaseAdmin
-          .from("partners")
-          .update({ primary_email: email })
-          .eq("id", partnerId);
-      }
+    if (existingPartnerUserByEmail?.partner_id) {
+      // Partner already exists via partner_users
+      partnerId = existingPartnerUserByEmail.partner_id;
+      const { data: partnerData } = await supabaseAdmin
+        .from("partners")
+        .select("id")
+        .eq("id", partnerId)
+        .single();
+      existingPartner = partnerData;
     } else {
+      // Check if partner exists by name
+      const { data: partnerByName } = await supabaseAdmin
+        .from("partners")
+        .select("id")
+        .ilike("name", `%${companyName}%`)
+        .limit(1)
+        .maybeSingle();
+
+      if (partnerByName?.id) {
+        partnerId = partnerByName.id;
+        existingPartner = partnerByName;
+      }
+    }
+
+    if (!partnerId) {
       // Create new partner record
       const { data: newPartner, error: partnerError } = await supabaseAdmin
         .from("partners")
@@ -338,7 +354,6 @@ serve(async (req) => {
           name: companyName,
           tier: tier || "Standard",
           contract_status: "Pending",
-          primary_email: email,
           assigned_account_manager: requestingUser.email || null,
         })
         .select("id")
