@@ -55,20 +55,22 @@ export default function Approvals() {
     enabled: isAdmin,
   });
 
-  // Fetch pending deliverables (status = 'submitted' or 'pending_review')
+  // Fetch pending deliverables - check submissions with status 'submitted' or 'pending_review'
   const { data: pendingDeliverables = [], isLoading } = useQuery({
     queryKey: ['pendingDeliverables'],
     queryFn: async () => {
+      // Get all submissions with pending status
+      const submissions = await partnerSubmissionsService.getAll();
+      const pendingSubmissions = submissions.filter(s => 
+        s.status === 'submitted' || s.status === 'pending_review'
+      );
+      
+      // Get unique deliverable IDs from pending submissions
+      const deliverableIds = [...new Set(pendingSubmissions.map(s => s.deliverable_id))];
+      
+      // Fetch deliverables
       const all = await deliverablesService.getAll();
-      // Filter for pending/submitted status
-      return all.filter(d => {
-        const status = d.status?.toLowerCase() || '';
-        return status === 'submitted' || 
-               status === 'pending_review' || 
-               status === 'pending review' ||
-               status.includes('pending') ||
-               status === 'pending';
-      });
+      return all.filter(d => deliverableIds.includes(d.id));
     },
     enabled: isAdmin,
   });
@@ -150,9 +152,16 @@ export default function Approvals() {
       // Log activity
       const deliverable = pendingDeliverables.find(d => d.id === deliverableId);
       if (deliverable && deliverable.partner_id) {
+        // Get partner_user id for user_id (reuse from above if available)
+        const { data: partnerUser } = await supabase
+          .from('partner_users')
+          .select('id')
+          .eq('auth_user_id', user?.id)
+          .single();
+        
         await activityLogService.create({
           partner_id: deliverable.partner_id,
-          user_id: user?.id,
+          user_id: partnerUser?.id || null,
           activity_type: 'deliverable_approved',
           description: `Deliverable "${deliverable.name}" approved`,
           metadata: {
