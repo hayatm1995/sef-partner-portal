@@ -177,17 +177,19 @@ export default function PartnerHub() {
     enabled: !!currentPartnerId && !isAdmin, // Only fetch for partners, admins see all
   });
   
-  // Map section IDs to feature names (matching the new feature names from requirements)
+  // Map section IDs to feature names (matching partner_features.feature values)
   const sectionToFeatureMap = {
-    'profile': 'Company Profile',
-    'deliverables': 'Deliverables',
-    'booth': 'Booth Options',
-    'vip': 'VIP Guest List',
-    'payments': 'Payments',
-    'legal': 'Legal & Branding',
-    'nominations': 'Nominations',
-    'media': 'Media Uploads',
-    'speakers': 'Speaker Requests',
+    'profile': 'company_profile',
+    'contacts': 'contacts',
+    'media': 'media_assets',
+    'pr': 'sef_schedule', // PR/Marketing section maps to SEF Schedule
+    'deliverables': 'deliverables',
+    'nominations': 'nominations',
+    'booth': 'booth_options',
+    'vip': 'vip_guest_list',
+    'payments': 'payments',
+    'legal': 'legal_branding',
+    'speakers': 'speaker_requests',
   };
   
   // Fetch booth for current partner to check if they have one

@@ -287,19 +287,92 @@ serve(async (req) => {
       );
     }
 
-    // 2. Insert into partner_users table
+    // 2. Create or get partner record
+    // Extract company name from email or use name as fallback
+    const companyName = name.includes('@') ? name.split('@')[0] : name;
+    
+    // Check if partner already exists (by email domain or name)
+    const { data: existingPartner } = await supabaseAdmin
+      .from("partners")
+      .select("id")
+      .ilike("name", `%${companyName}%`)
+      .limit(1)
+      .single();
+
+    let partnerId: string | null = null;
+
+    if (existingPartner?.id) {
+      partnerId = existingPartner.id;
+    } else {
+      // Create new partner record
+      const { data: newPartner, error: partnerError } = await supabaseAdmin
+        .from("partners")
+        .insert({
+          name: companyName,
+          tier: "Standard",
+          contract_status: "Pending",
+          assigned_account_manager: requestingUser.email || null,
+        })
+        .select("id")
+        .single();
+
+      if (partnerError || !newPartner?.id) {
+        // Rollback: delete auth user if partner creation fails
+        await supabaseAdmin.auth.admin.deleteUser(authUserData.user.id);
+        return new Response(
+          JSON.stringify({ error: partnerError?.message || "Failed to create partner record" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      partnerId = newPartner.id;
+
+      // 2a. Set up default partner_features for new partner
+      const defaultFeatures = [
+        'company_profile',
+        'contacts',
+        'media_assets',
+        'sef_schedule',
+        'deliverables',
+        'nominations'
+      ];
+
+      const featureInserts = defaultFeatures.map(feature => ({
+        partner_id: partnerId,
+        feature: feature,
+        enabled: true,
+      }));
+
+      const { error: featuresError } = await supabaseAdmin
+        .from("partner_features")
+        .insert(featureInserts);
+
+      if (featuresError) {
+        console.warn("Failed to create default partner_features:", featuresError);
+        // Don't fail - features can be added later
+      }
+    }
+
+    // 3. Insert into partner_users table
     const { data: partnerUser, error: partnerUserError } =
       await supabaseAdmin.from("partner_users").insert({
         auth_user_id: authUserData.user.id,
-        partner_id: null, // Can be assigned later
+        partner_id: partnerId,
         email,
         full_name: name,
         role: "partner",
       }).select().single();
 
     if (partnerUserError) {
-      // Rollback: delete auth user if partner_user insert fails
+      // Rollback: delete auth user and partner if partner_user insert fails
       await supabaseAdmin.auth.admin.deleteUser(authUserData.user.id);
+      if (partnerId && !existingPartner?.id) {
+        // Only delete partner if we created it
+        await supabaseAdmin.from("partners").delete().eq("id", partnerId);
+      }
       return new Response(
         JSON.stringify({ error: partnerUserError.message }),
         {
@@ -309,7 +382,7 @@ serve(async (req) => {
       );
     }
 
-    // 3. Generate magic link
+    // 4. Generate magic link
     const siteUrl = Deno.env.get("VITE_SITE_URL") || Deno.env.get("SUPABASE_SITE_URL") || "https://sefpartners.vercel.app";
     const { data: magicLinkData, error: linkError } =
       await supabaseAdmin.auth.admin.generateLink({
@@ -334,7 +407,7 @@ serve(async (req) => {
 
     const magicLink = magicLinkData.properties.action_link;
 
-    // 4. Send email via Resend
+    // 5. Send email via Resend
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
     if (!resendApiKey) {
       // Don't fail - log warning but return success
@@ -353,16 +426,26 @@ serve(async (req) => {
       }
     }
 
-    // 5. Log activity
+    // 6. Log activity - get admin user_id from partner_users
+    const { data: adminPartnerUser } = await supabaseAdmin
+      .from("partner_users")
+      .select("id")
+      .eq("auth_user_id", requestingUser.id)
+      .single();
+
     await supabaseAdmin.from("activity_log").insert({
       activity_type: "partner_invited",
+      user_id: adminPartnerUser?.id || null,
       user_email: requestingUser.email,
       target_user_email: email,
       description: `Invited partner: ${name} (${email})`,
+      partner_id: partnerId,
       metadata: {
         partner_user_id: partnerUser.id,
         auth_user_id: authUserData.user.id,
+        partner_id: partnerId,
         invited_by: requestingUser.id,
+        company_name: companyName,
       },
     });
 

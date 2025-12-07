@@ -56,27 +56,48 @@ export default function PartnerDashboard() {
     enabled: !!partnerId,
   });
 
-  // Fetch next 3 deliverables sorted by due_date
-  const { data: upcomingDeliverables = [], isLoading: loadingDeliverables } = useQuery({
-    queryKey: ['upcomingDeliverables', partnerId],
+  // Fetch deliverables with submission status
+  const { data: deliverablesData = [], isLoading: loadingDeliverables } = useQuery({
+    queryKey: ['partnerDeliverablesWithStatus', partnerId],
     queryFn: async () => {
       if (!partnerId) return [];
+      const { deliverablesService, partnerSubmissionsService } = await import('@/services/supabaseService');
       const all = await deliverablesService.getAll(partnerId);
-      // Sort by due_date, filter out completed, take next 3
-      return all
-        .filter(d => {
-          // Only show deliverables that are not approved or have no submission
-          return true; // Show all for now
-        })
-        .sort((a, b) => {
-          const dateA = a.due_date ? new Date(a.due_date) : new Date('9999-12-31');
-          const dateB = b.due_date ? new Date(b.due_date) : new Date('9999-12-31');
-          return dateA - dateB;
-        })
-        .slice(0, 3);
+      const submissions = await partnerSubmissionsService.getByPartnerId(partnerId);
+      
+      // Map submissions to deliverables
+      const submissionsMap = {};
+      submissions.forEach(s => {
+        submissionsMap[s.deliverable_id] = s;
+      });
+      
+      return all.map(d => ({
+        ...d,
+        submission: submissionsMap[d.id],
+        status: submissionsMap[d.id]?.status || 'not_submitted'
+      }));
     },
     enabled: !!partnerId,
   });
+
+  // Calculate deliverable stats
+  const deliverableStats = {
+    total: deliverablesData.length,
+    uploaded: deliverablesData.filter(d => d.submission).length,
+    approved: deliverablesData.filter(d => d.status === 'approved').length,
+    pending: deliverablesData.filter(d => ['submitted', 'pending_review'].includes(d.status)).length,
+    rejected: deliverablesData.filter(d => d.status === 'rejected').length,
+  };
+
+  // Fetch next 3 upcoming deliverables sorted by due_date
+  const upcomingDeliverables = deliverablesData
+    .filter(d => !d.submission || !['approved'].includes(d.status))
+    .sort((a, b) => {
+      const dateA = a.due_date ? new Date(a.due_date) : new Date('9999-12-31');
+      const dateB = b.due_date ? new Date(b.due_date) : new Date('9999-12-31');
+      return dateA - dateB;
+    })
+    .slice(0, 3);
 
   const progressPercentage = progress?.progress_percentage ?? 0;
   const approvedCount = progress?.approved_submissions ?? 0;
@@ -353,9 +374,19 @@ export default function PartnerDashboard() {
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Deliverables</p>
                   <p className="text-3xl font-bold text-blue-600">
-                    {approvedCount}/{totalCount}
+                    {deliverableStats.approved}/{deliverableStats.total}
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">Approved</p>
+                  <div className="flex gap-2 mt-1 text-xs">
+                    <span className="text-green-600">{deliverableStats.approved} Approved</span>
+                    <span className="text-gray-400">•</span>
+                    <span className="text-yellow-600">{deliverableStats.pending} Pending</span>
+                    {deliverableStats.rejected > 0 && (
+                      <>
+                        <span className="text-gray-400">•</span>
+                        <span className="text-red-600">{deliverableStats.rejected} Rejected</span>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <FileText className="w-10 h-10 text-blue-400" />
               </div>

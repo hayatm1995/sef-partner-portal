@@ -1094,8 +1094,32 @@ export default function Layout({ children, currentPageName }) {
         </Sidebar>
 
         <main className="flex-1 overflow-y-auto">
+          {/* Admin Viewing as Partner Banner */}
+          {isAdmin && effectiveViewingAsPartnerId && viewingAsPartner && (
+            <div className="sticky top-0 z-50 bg-gradient-to-r from-orange-500 to-amber-600 text-white px-6 py-3 shadow-md">
+              <div className="flex items-center justify-between max-w-7xl mx-auto">
+                <div className="flex items-center gap-3">
+                  <Shield className="w-5 h-5" />
+                  <div>
+                    <p className="font-semibold text-sm">Admin Mode: Viewing Partner</p>
+                    <p className="text-xs text-orange-100">{viewingAsPartner.name}</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleStopViewing}
+                  className="bg-white/20 hover:bg-white/30 border-white/30 text-white"
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Exit Partner View
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Top Header Bar with Notification Bell */}
-          <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200/60 px-6 py-3">
+          <div className={`sticky ${isAdmin && effectiveViewingAsPartnerId ? 'top-[60px]' : 'top-0'} z-40 bg-white/80 backdrop-blur-md border-b border-gray-200/60 px-6 py-3`}>
             <div className="flex items-center justify-between">
               {!user && (
                 <Button
