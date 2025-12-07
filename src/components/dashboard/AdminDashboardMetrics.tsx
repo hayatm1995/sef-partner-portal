@@ -55,39 +55,57 @@ export default function AdminDashboardMetrics({
   const { data: allPartners = [], isLoading: loadingPartners } = useQuery({
     queryKey: ['dashboardPartners', isSuperAdmin, assignedPartners],
     queryFn: async () => {
-      const partners = await partnersService.getAll();
-      if (shouldFilterByAssigned) {
-        return partners.filter(p => assignedPartners.includes(p.id));
+      try {
+        const partners = await partnersService.getAll();
+        if (shouldFilterByAssigned) {
+          return partners.filter(p => assignedPartners.includes(p.id));
+        }
+        return partners || [];
+      } catch (error) {
+        console.error('[AdminDashboardMetrics] Error fetching partners:', error);
+        return []; // Return empty array on error
       }
-      return partners;
     },
     staleTime: 30000, // Cache for 30 seconds
+    retry: 1,
   });
 
   // Fetch all deliverables (filtered by assigned partners if admin)
   const { data: allDeliverables = [], isLoading: loadingDeliverables } = useQuery({
     queryKey: ['dashboardDeliverables', isSuperAdmin, assignedPartners],
     queryFn: async () => {
-      const deliverables = await deliverablesService.getAll();
-      if (shouldFilterByAssigned) {
-        return deliverables.filter(d => assignedPartners.includes(d.partner_id));
+      try {
+        const deliverables = await deliverablesService.getAll();
+        if (shouldFilterByAssigned) {
+          return deliverables.filter(d => assignedPartners.includes(d.partner_id));
+        }
+        return deliverables || [];
+      } catch (error) {
+        console.error('[AdminDashboardMetrics] Error fetching deliverables:', error);
+        return []; // Return empty array on error
       }
-      return deliverables;
     },
     staleTime: 30000,
+    retry: 1,
   });
 
   // Fetch all submissions (filtered by assigned partners if admin)
   const { data: allSubmissions = [], isLoading: loadingSubmissions } = useQuery({
     queryKey: ['dashboardSubmissions', isSuperAdmin, assignedPartners],
     queryFn: async () => {
-      const submissions = await partnerSubmissionsService.getAll();
-      if (shouldFilterByAssigned) {
-        return submissions.filter(s => assignedPartners.includes(s.partner_id));
+      try {
+        const submissions = await partnerSubmissionsService.getAll();
+        if (shouldFilterByAssigned) {
+          return submissions.filter(s => assignedPartners.includes(s.partner_id));
+        }
+        return submissions || [];
+      } catch (error) {
+        console.error('[AdminDashboardMetrics] Error fetching submissions:', error);
+        return []; // Return empty array on error
       }
-      return submissions;
     },
     staleTime: 30000,
+    retry: 1,
   });
 
   // Fetch all nominations (filtered by assigned partners if admin)
@@ -112,60 +130,84 @@ export default function AdminDashboardMetrics({
   const { data: allProgress = [], isLoading: loadingProgress } = useQuery({
     queryKey: ['dashboardProgress', isSuperAdmin, assignedPartners],
     queryFn: async () => {
-      const progress = await partnerProgressService.getAll();
-      if (shouldFilterByAssigned) {
-        return progress.filter(p => assignedPartners.includes(p.partner_id));
+      try {
+        const progress = await partnerProgressService.getAll();
+        if (shouldFilterByAssigned) {
+          return progress.filter(p => assignedPartners.includes(p.partner_id));
+        }
+        return progress || [];
+      } catch (error) {
+        console.error('[AdminDashboardMetrics] Error fetching progress:', error);
+        return []; // Return empty array on error
       }
-      return progress;
     },
     staleTime: 30000,
+    retry: 1,
   });
 
   // Fetch media files count (from media_tracker table)
   const { data: mediaFilesCount = 0, isLoading: loadingMedia } = useQuery({
     queryKey: ['dashboardMediaFiles', isSuperAdmin, assignedPartners],
     queryFn: async () => {
-      const { supabase } = await import('@/config/supabase');
-      let query = supabase
-        .from('media_tracker')
-        .select('id', { count: 'exact', head: true });
+      try {
+        const { supabase } = await import('@/config/supabase');
+        let query = supabase
+          .from('media_tracker')
+          .select('id', { count: 'exact', head: true });
 
-      if (shouldFilterByAssigned) {
-        query = query.in('partner_id', assignedPartners);
+        if (shouldFilterByAssigned) {
+          query = query.in('partner_id', assignedPartners);
+        }
+
+        const { count, error } = await query;
+        if (error) {
+          console.error('[AdminDashboardMetrics] Error fetching media files:', error);
+          return 0; // Return 0 on error
+        }
+        return count || 0;
+      } catch (error) {
+        console.error('[AdminDashboardMetrics] Error fetching media files:', error);
+        return 0; // Return 0 on error
       }
-
-      const { count, error } = await query;
-      if (error) throw error;
-      return count || 0;
     },
     staleTime: 30000,
+    retry: 1,
   });
 
   // Fetch recent activity (last 10)
   const { data: recentActivity = [], isLoading: loadingActivity } = useQuery({
     queryKey: ['dashboardRecentActivity', isSuperAdmin, assignedPartners],
     queryFn: async () => {
-      const { supabase } = await import('@/config/supabase');
-      let query = supabase
-        .from('activity_log')
-        .select(`
-          *,
-          partner:partners(id, name),
-          user:partner_users(id, full_name, email)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(10);
+      try {
+        const { supabase } = await import('@/config/supabase');
+        let query = supabase
+          .from('activity_log')
+          .select(`
+            *,
+            partner:partners(id, name),
+            user:partner_users(id, full_name, email)
+          `)
+          .order('created_at', { ascending: false })
+          .limit(10);
 
-      if (shouldFilterByAssigned) {
-        query = query.in('partner_id', assignedPartners);
+        if (shouldFilterByAssigned) {
+          query = query.in('partner_id', assignedPartners);
+        }
+
+        const { data, error } = await query;
+        if (error) {
+          console.error('[AdminDashboardMetrics] Error fetching activity:', error);
+          return []; // Return empty array on error
+        }
+        return data || [];
+      } catch (error) {
+        console.error('[AdminDashboardMetrics] Error fetching activity:', error);
+        return []; // Return empty array on error
       }
-
-      const { data, error } = await query;
-      if (error) throw error;
-      return data || [];
     },
     staleTime: 10000, // Refresh every 10 seconds for activity
     refetchInterval: 30000, // Auto-refetch every 30 seconds
+    retry: 1,
   });
 
   // Calculate metrics

@@ -201,58 +201,88 @@ export default function Layout({ children, currentPageName }) {
   const { data: allUsersForDropdown = [], isLoading: loadingUsersForDropdown } = useQuery({
     queryKey: ['allUsersForDropdown', userRole],
     queryFn: async () => {
-      console.log('[Layout] Fetching users for dropdown, role:', userRole);
-      const { partnerUsersService } = await import('@/services/supabaseService');
-      
-      // Superadmin: Get all users (admins + partners)
-      if (isSuperAdmin) {
-        console.log('[Layout] Superadmin: Fetching all users (admins + partners)');
-        const partners = await partnersService.getAll();
-        const allUsers = [];
+      try {
+        console.log('[Layout] Fetching users for dropdown, role:', userRole);
+        const { partnerUsersService } = await import('@/services/supabaseService');
         
-        // Get all partner users
-        for (const p of partners) {
-          const users = await partnerUsersService.getByPartnerId(p.id);
-          allUsers.push(...users);
+        // Superadmin: Get all users (admins + partners)
+        if (isSuperAdmin) {
+          console.log('[Layout] Superadmin: Fetching all users (admins + partners)');
+          try {
+            const partners = await partnersService.getAll();
+            const allUsers = [];
+            
+            // Get all partner users
+            for (const p of partners) {
+              try {
+                const users = await partnerUsersService.getByPartnerId(p.id);
+                allUsers.push(...users);
+              } catch (error) {
+                console.error(`[Layout] Error fetching users for partner ${p.id}:`, error);
+                // Continue with other partners
+              }
+            }
+            
+            // Also get admin users (users with role 'admin' or 'superadmin' in partner_users)
+            try {
+              const { data: adminUsers, error: adminError } = await supabase
+                .from('partner_users')
+                .select('full_name, email, role, partner_id, id')
+                .in('role', ['admin', 'superadmin'])
+                .order('full_name');
+                
+              if (adminUsers && !adminError) {
+                console.log('[Layout] Found admin users:', adminUsers.length);
+                allUsers.push(...adminUsers);
+              } else if (adminError) {
+                console.error('[Layout] Error fetching admin users:', adminError);
+              }
+            } catch (error) {
+              console.error('[Layout] Error fetching admin users:', error);
+              // Continue without admin users
+            }
+            
+            console.log('[Layout] Total users for superadmin dropdown:', allUsers.length);
+            return allUsers;
+          } catch (error) {
+            console.error('[Layout] Error fetching partners for superadmin:', error);
+            return [];
+          }
         }
         
-        // Also get admin users (users with role 'admin' or 'superadmin' in partner_users)
-        const { data: adminUsers, error: adminError } = await supabase
-          .from('partner_users')
-          .select('full_name, email, role, partner_id, id')
-          .in('role', ['admin', 'superadmin'])
-          .order('full_name');
-          
-        if (adminUsers && !adminError) {
-          console.log('[Layout] Found admin users:', adminUsers.length);
-          allUsers.push(...adminUsers);
-        } else if (adminError) {
-          console.error('[Layout] Error fetching admin users:', adminError);
+        // Admin: Get only partner users (not admins)
+        if (isAdmin) {
+          console.log('[Layout] Admin: Fetching partner users only');
+          try {
+            const partners = await partnersService.getAll();
+            const allUsers = [];
+            for (const p of partners) {
+              try {
+                const users = await partnerUsersService.getByPartnerId(p.id);
+                // Filter out admin users
+                const partnerUsers = users.filter(u => u.role === 'partner' || !u.role);
+                allUsers.push(...partnerUsers);
+              } catch (error) {
+                console.error(`[Layout] Error fetching users for partner ${p.id}:`, error);
+                // Continue with other partners
+              }
+            }
+            console.log('[Layout] Total partner users for admin dropdown:', allUsers.length);
+            return allUsers;
+          } catch (error) {
+            console.error('[Layout] Error fetching partners for admin:', error);
+            return [];
+          }
         }
         
-        console.log('[Layout] Total users for superadmin dropdown:', allUsers.length);
-        return allUsers;
+        return [];
+      } catch (error) {
+        console.error('[Layout] Error in fetchAllUsers:', error);
+        return []; // Return empty array on any error
       }
-      
-      // Admin: Get only partner users (not admins)
-      if (isAdmin) {
-        console.log('[Layout] Admin: Fetching partner users only');
-        const partners = await partnersService.getAll();
-        const allUsers = [];
-        for (const p of partners) {
-          const users = await partnerUsersService.getByPartnerId(p.id);
-          // Filter out admin users
-          const partnerUsers = users.filter(u => u.role === 'partner' || !u.role);
-          allUsers.push(...partnerUsers);
-        }
-        console.log('[Layout] Total partner users for admin dropdown:', allUsers.length);
-        return allUsers;
-      }
-      
-      return [];
     },
     enabled: !!user && !!userRole && isAdmin, // Both admin and superadmin can use view-as, but wait for role
-    retry: 2,
+    retry: 1, // Reduce retries
     staleTime: 30000, // Cache for 30 seconds
   });
 

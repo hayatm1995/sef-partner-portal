@@ -23,7 +23,8 @@ import {
   Users,
   DollarSign,
   BarChart3,
-  Zap
+  Zap,
+  AlertCircle
 } from "lucide-react";
 import { motion } from "framer-motion";
 import PartnerDashboard from "./PartnerDashboard";
@@ -115,11 +116,11 @@ function AdminFullDashboard() {
         return result || [];
       } catch (error) {
         console.error('[AdminFullDashboard] Error fetching all partners:', error);
-        throw error; // Re-throw to let React Query handle it
+        return []; // Return empty array instead of throwing
       }
     },
     enabled: !!user,
-    retry: 2,
+    retry: 1, // Reduce retries
     staleTime: 30000, // Cache for 30 seconds
   });
 
@@ -133,11 +134,11 @@ function AdminFullDashboard() {
         return result || [];
       } catch (error) {
         console.error('[AdminFullDashboard] Error fetching all deliverables:', error);
-        throw error;
+        return []; // Return empty array instead of throwing
       }
     },
     enabled: !!user,
-    retry: 2,
+    retry: 1, // Reduce retries
     staleTime: 30000,
   });
 
@@ -151,11 +152,11 @@ function AdminFullDashboard() {
         return result || [];
       } catch (error) {
         console.error('[AdminFullDashboard] Error fetching all nominations:', error);
-        throw error;
+        return []; // Return empty array instead of throwing (non-critical)
       }
     },
     enabled: !!user,
-    retry: 2,
+    retry: 1, // Reduce retries
     staleTime: 30000,
   });
 
@@ -184,11 +185,10 @@ function AdminFullDashboard() {
   const safeAllNominations = Array.isArray(allNominations) ? allNominations : [];
   
   // Show loading state if any critical query is loading
-  const isLoading = loadingPartners || loadingDeliverables || loadingNominations;
+  const isLoading = loadingPartners || loadingDeliverables;
   
-  // Show error state only for critical errors (partners/deliverables)
+  // Don't block on nominations loading (non-critical)
   // Nominations error is non-critical - dashboard can still function
-  const hasCriticalError = partnersError || deliverablesError;
   const hasNonCriticalError = nominationsError;
   
   // Log non-critical errors but don't block dashboard
@@ -244,24 +244,8 @@ function AdminFullDashboard() {
     );
   }
 
-  // Only show error screen for critical errors (partners/deliverables)
-  // Nominations error is handled gracefully - dashboard still shows
-  if (hasCriticalError) {
-    return (
-      <div className="p-4 md:p-8 max-w-7xl mx-auto">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-red-800 mb-2">Error Loading Dashboard</h3>
-          <p className="text-red-600 mb-4">
-            {partnersError && `Partners: ${partnersError.message}`}
-            {deliverablesError && `Deliverables: ${deliverablesError.message}`}
-          </p>
-          <Button onClick={() => window.location.reload()} variant="outline">
-            Retry
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  // Don't show error screen - errors are handled gracefully by returning empty arrays
+  // Dashboard will show with available data
   
   // Show warning banner for non-critical errors (nominations)
   const showNominationsWarning = hasNonCriticalError;
