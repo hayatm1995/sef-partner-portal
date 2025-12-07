@@ -17,7 +17,8 @@ const corsHeaders = {
 };
 
 /**
- * Generate Belong+ branded HTML email template
+ * Generate SEF branded HTML email template
+ * Uses SEF colors: #F47B20 (orange), #4A1B85 (purple), white bg
  */
 function generateBelongPlusEmailTemplate(
   partnerName: string,
@@ -33,18 +34,18 @@ function generateBelongPlusEmailTemplate(
   <title>Welcome to SEF Partner Portal</title>
 </head>
 <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
-  <table role="presentation" style="width: 100%; border-collapse: collapse; background: linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%); padding: 40px 20px;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse; background: linear-gradient(135deg, #F47B20 0%, #4A1B85 100%); padding: 40px 20px;">
     <tr>
       <td align="center">
         <table role="presentation" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);">
           <!-- Header with gradient background -->
           <tr>
-            <td style="background: linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%); padding: 40px 30px; text-align: center;">
+            <td style="background: linear-gradient(135deg, #F47B20 0%, #4A1B85 100%); padding: 40px 30px; text-align: center;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">
                 Welcome to SEF Partner Portal
               </h1>
               <p style="margin: 12px 0 0 0; color: rgba(255, 255, 255, 0.9); font-size: 16px;">
-                Belong+ Partnership Program
+                SEF Partner Portal
               </p>
             </td>
           </tr>
@@ -69,8 +70,8 @@ function generateBelongPlusEmailTemplate(
                 <tr>
                   <td align="center">
                     <a href="${magicLink}" 
-                       style="display: inline-block; padding: 16px 32px; background: linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%); color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);">
-                      Access Partner Portal
+                       style="display: inline-block; padding: 16px 32px; background: linear-gradient(135deg, #F47B20 0%, #4A1B85 100%); color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 12px rgba(244, 123, 32, 0.3);">
+                      Access Dashboard
                     </a>
                   </td>
                 </tr>
@@ -79,7 +80,7 @@ function generateBelongPlusEmailTemplate(
               <p style="margin: 0 0 10px 0; color: #6b7280; font-size: 13px; line-height: 1.5;">
                 Or copy and paste this link into your browser:
               </p>
-              <p style="margin: 0 0 30px 0; color: #8B5CF6; font-size: 13px; line-height: 1.5; word-break: break-all;">
+              <p style="margin: 0 0 30px 0; color: #F47B20; font-size: 13px; line-height: 1.5; word-break: break-all;">
                 ${magicLink}
               </p>
               
@@ -108,7 +109,7 @@ function generateBelongPlusEmailTemplate(
                     <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 12px;">
                       Need help? Contact us at
                     </p>
-                    <p style="margin: 0; color: #8B5CF6; font-size: 12px; font-weight: 600;">
+                    <p style="margin: 0; color: #F47B20; font-size: 12px; font-weight: 600;">
                       partners@sheraa.ae
                     </p>
                   </td>

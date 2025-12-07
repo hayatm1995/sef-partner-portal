@@ -6,12 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Download, Activity, MessageSquare, Building2 } from "lucide-react";
+import { Download, Activity, MessageSquare, Building2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 export default function AdminControlRoom() {
-  const { user } = useAuth();
-  const isSuperAdmin = user?.role === 'sef_admin' || user?.is_super_admin;
+  const { role } = useAuth();
+  const isSuperAdmin = role === 'superadmin';
 
   const { data: progress = [] } = useQuery({
     queryKey: ['controlRoomProgress'],
@@ -63,7 +63,13 @@ export default function AdminControlRoom() {
   };
 
   if (!isSuperAdmin) {
-    return null;
+    return (
+      <div className="p-8 text-center">
+        <AlertCircle className="w-16 h-16 mx-auto text-red-500 mb-4" />
+        <h2 className="text-2xl font-bold mb-2">Access Denied</h2>
+        <p className="text-gray-600">Superadmin access required. Only users with superadmin role can access Control Room.</p>
+      </div>
+    );
   }
 
   return (

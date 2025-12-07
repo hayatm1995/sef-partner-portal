@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 // TODO: Base44 removed - migrate to Supabase
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,11 +58,8 @@ export default function AdminApprovals() {
   const [newComment, setNewComment] = useState("");
 
   const queryClient = useQueryClient();
-
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me(),
-  });
+  const { user, role } = useAuth();
+  const isAdmin = role === 'admin' || role === 'superadmin';
 
   const { data: allPartners = [] } = useQuery({
     queryKey: ['allPartners'],
@@ -69,13 +67,13 @@ export default function AdminApprovals() {
       const users = await base44.entities.User.list();
       return users.filter(u => u.role !== 'admin' && !u.is_super_admin);
     },
-    enabled: !!user && (user.role === 'admin' || user.is_super_admin),
+    enabled: isAdmin,
   });
 
   const { data: approvals = [] } = useQuery({
     queryKey: ['partnerApprovals'],
     queryFn: () => base44.entities.PartnerApproval.list('-created_date'),
-    enabled: !!user && (user.role === 'admin' || user.is_super_admin),
+    enabled: isAdmin,
   });
 
   const uploadMutation = useMutation({
@@ -219,7 +217,7 @@ export default function AdminApprovals() {
     overdue: approvals.filter(a => isPast(parseISO(a.deadline)) && a.status === "pending").length
   };
 
-  if (user?.role !== 'admin' && !user?.is_super_admin) {
+  if (!isAdmin) {
     return (
       <div className="p-8 text-center">
         <AlertCircle className="w-16 h-16 mx-auto text-red-500 mb-4" />

@@ -20,13 +20,22 @@ import { useLocation } from "react-router-dom";
  * }
  */
 export function usePartnerDeliverables() {
-  const { user, partner } = useAuth();
+  const { user, partner, partnerId, role } = useAuth();
   const location = useLocation();
   
   // Get current partner ID (handles admin view-as functionality)
+  // Priority: 1) viewAs param, 2) partnerId from context, 3) partner?.id
   const urlParams = new URLSearchParams(location.search);
   const viewAsPartnerId = urlParams.get('viewAs');
-  const currentPartnerId = viewAsPartnerId || partner?.id;
+  const currentPartnerId = viewAsPartnerId || partnerId || partner?.id;
+  
+  console.log('[usePartnerDeliverables] Partner ID resolution:', {
+    viewAsPartnerId,
+    partnerIdFromContext: partnerId,
+    partnerFromContext: partner?.id,
+    resolvedPartnerId: currentPartnerId,
+    role
+  });
 
   // Fetch deliverables for the partner
   const { data: deliverables = [], isLoading: loadingDeliverables, error: deliverablesError } = useQuery({

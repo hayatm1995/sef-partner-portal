@@ -1,6 +1,12 @@
 import React, { useState } from "react";
-// TODO: Base44 removed - migrate to Supabase
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
+import { 
+  partnersService, 
+  deliverablesService, 
+  nominationsService,
+  partnerUsersService
+} from "@/services/supabaseService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,110 +37,187 @@ import VIPInvitationStatusManager from "../components/admin/VIPInvitationStatusM
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState("deliverables");
   const queryClient = useQueryClient();
+  const { role } = useAuth();
+  const isAdmin = role === 'admin' || role === 'superadmin';
 
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me(),
+  // Get all partner users for name mapping
+  const { data: allPartnerUsers = [] } = useQuery({
+    queryKey: ['allPartnerUsers'],
+    queryFn: async () => {
+      try {
+        const result = await partnerUsersService.getAll();
+        return result || [];
+      } catch (error) {
+        console.error('Error fetching partner users:', error);
+        return [];
+      }
+    },
+    enabled: isAdmin,
+    retry: 1,
   });
 
-  // Get all partners for name mapping
+  // Get all partners for company name mapping
   const { data: allPartners = [] } = useQuery({
     queryKey: ['allPartners'],
-    queryFn: () => base44.entities.User.list(),
-    enabled: user?.role === 'admin' || user?.is_super_admin,
+    queryFn: async () => {
+      try {
+        const result = await partnersService.getAll();
+        return result || [];
+      } catch (error) {
+        console.error('Error fetching partners:', error);
+        return [];
+      }
+    },
+    enabled: isAdmin,
+    retry: 1,
   });
 
   const getPartnerName = (email) => {
-    const partner = allPartners.find(p => p.email === email);
-    return partner?.full_name || email;
+    const user = allPartnerUsers.find(p => p.email === email);
+    return user?.full_name || email;
   };
 
   const getPartnerCompany = (email) => {
-    const partner = allPartners.find(p => p.email === email);
-    return partner?.company_name || '';
+    const user = allPartnerUsers.find(p => p.email === email);
+    if (user?.partner_id) {
+      const partner = allPartners.find(p => p.id === user.partner_id);
+      return partner?.name || '';
+    }
+    return '';
   };
 
   const { data: deliverables = [] } = useQuery({
     queryKey: ['allDeliverables'],
-    queryFn: () => base44.entities.Deliverable.list('-created_date'),
-    enabled: user?.role === 'admin' || user?.is_super_admin,
+    queryFn: async () => {
+      try {
+        const result = await deliverablesService.getAll();
+        return result || [];
+      } catch (error) {
+        console.error('Error fetching deliverables:', error);
+        return [];
+      }
+    },
+    enabled: isAdmin,
+    retry: 1,
   });
 
   const { data: nominations = [] } = useQuery({
     queryKey: ['allNominations'],
-    queryFn: () => base44.entities.Nomination.list('-created_date'),
-    enabled: user?.role === 'admin' || user?.is_super_admin,
+    queryFn: async () => {
+      try {
+        const result = await nominationsService.getAll();
+        return result || [];
+      } catch (error) {
+        console.error('Error fetching nominations:', error);
+        return [];
+      }
+    },
+    enabled: isAdmin,
+    retry: 1,
   });
 
+  // TODO: These entities need to be migrated to Supabase
+  // For now, return empty arrays
   const { data: mediaFiles = [] } = useQuery({
     queryKey: ['allMediaBranding'],
-    queryFn: () => base44.entities.MediaBranding.list('-upload_date'),
-    enabled: user?.role === 'admin' || user?.is_super_admin,
+    queryFn: async () => {
+      console.warn('MediaBranding migration to Supabase pending');
+      return [];
+    },
+    enabled: isAdmin,
   });
 
   const { data: workshops = [] } = useQuery({
     queryKey: ['allWorkshops'],
-    queryFn: () => base44.entities.WorkshopNomination.list('-created_date'),
-    enabled: user?.role === 'admin' || user?.is_super_admin,
+    queryFn: async () => {
+      console.warn('WorkshopNomination migration to Supabase pending');
+      return [];
+    },
+    enabled: isAdmin,
   });
 
   const { data: speakers = [] } = useQuery({
     queryKey: ['allSpeakers'],
-    queryFn: () => base44.entities.SpeakerNomination.list('-created_date'),
-    enabled: user?.role === 'admin' || user?.is_super_admin,
+    queryFn: async () => {
+      console.warn('SpeakerNomination migration to Supabase pending');
+      return [];
+    },
+    enabled: isAdmin,
   });
 
   const { data: startups = [] } = useQuery({
     queryKey: ['allStartups'],
-    queryFn: () => base44.entities.StartupNomination.list('-created_date'),
-    enabled: user?.role === 'admin' || user?.is_super_admin,
+    queryFn: async () => {
+      console.warn('StartupNomination migration to Supabase pending');
+      return [];
+    },
+    enabled: isAdmin,
   });
 
   const { data: awards = [] } = useQuery({
     queryKey: ['allAwards'],
-    queryFn: () => base44.entities.RecognitionAward.list('-created_date'),
-    enabled: user?.role === 'admin' || user?.is_super_admin,
+    queryFn: async () => {
+      console.warn('RecognitionAward migration to Supabase pending');
+      return [];
+    },
+    enabled: isAdmin,
   });
 
   const { data: vipInvitations = [] } = useQuery({
     queryKey: ['allVIPInvitations'],
-    queryFn: () => base44.entities.VIPInvitation.list('-created_date'),
-    enabled: user?.role === 'admin' || user?.is_super_admin,
+    queryFn: async () => {
+      console.warn('VIPInvitation migration to Supabase pending');
+      return [];
+    },
+    enabled: isAdmin,
   });
 
   const { data: badgeRegistrations = [] } = useQuery({
     queryKey: ['allBadgeRegistrations'],
-    queryFn: () => base44.entities.BadgeRegistration.list('-created_date'),
-    enabled: user?.role === 'admin' || user?.is_super_admin,
+    queryFn: async () => {
+      console.warn('BadgeRegistration migration to Supabase pending');
+      return [];
+    },
+    enabled: isAdmin,
   });
 
   const { data: boothActivations = [] } = useQuery({
     queryKey: ['allBoothActivations'],
-    queryFn: () => base44.entities.BoothActivation.list('-created_date'),
-    enabled: user?.role === 'admin' || user?.is_super_admin,
+    queryFn: async () => {
+      console.warn('BoothActivation migration to Supabase pending');
+      return [];
+    },
+    enabled: isAdmin,
   });
 
   const { data: testimonials = [] } = useQuery({
     queryKey: ['allTestimonials'],
-    queryFn: () => base44.entities.Testimonial.list('-created_date'),
-    enabled: user?.role === 'admin' || user?.is_super_admin,
+    queryFn: async () => {
+      console.warn('Testimonial migration to Supabase pending');
+      return [];
+    },
+    enabled: isAdmin,
   });
 
   const updateDeliverableMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.Deliverable.update(id, data),
+    mutationFn: async ({ id, data }) => {
+      return await deliverablesService.update(id, data);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['allDeliverables'] });
     },
   });
 
   const updateNominationMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.Nomination.update(id, data),
+    mutationFn: async ({ id, data }) => {
+      return await nominationsService.update(id, data);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['allNominations'] });
     },
   });
 
-  if (user?.role !== 'admin' && !user?.is_super_admin) {
+  if (!isAdmin) {
     return (
       <div className="p-8 text-center">
         <AlertCircle className="w-16 h-16 mx-auto text-red-500 mb-4" />
@@ -144,8 +227,8 @@ export default function AdminPanel() {
     );
   }
 
-  const pendingDeliverables = deliverables.filter(d => d.status === 'pending_review').length;
-  const pendingNominations = nominations.filter(n => n.status === 'submitted').length;
+  const pendingDeliverables = deliverables.filter(d => d.status === 'Pending Review' || d.status === 'pending_review').length;
+  const pendingNominations = nominations.filter(n => n.status === 'Submitted' || n.status === 'submitted' || n.status === 'Under Review' || n.status === 'under_review').length;
   const pendingWorkshops = workshops.filter(w => w.status === 'submitted').length;
   const pendingSpeakers = speakers.filter(s => s.status === 'submitted').length;
 

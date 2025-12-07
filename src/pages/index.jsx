@@ -105,11 +105,15 @@ import VIPApprovals from "./admin/VIPApprovals";
 import AdminBooths from "./admin/AdminBooths";
 import AdminBoothDetails from "./admin/AdminBoothDetails";
 import AdminControlRoom from "./admin/AdminControlRoom";
+import AdminOperations from "./admin/AdminOperations";
 import PartnerMessages from "@/components/messages/PartnerMessages";
 
 import Login from "./Login";
+import Landing from "./Landing";
+import SetPassword from "./auth/SetPassword";
 import AuthGuard from "@/components/auth/AuthGuard";
 import RoleGuard from "@/components/auth/RoleGuard";
+import RouteGuard from "@/components/auth/RouteGuard";
 import { BrowserRouter as Router, Route, Routes, useLocation, Navigate } from 'react-router-dom';
 import { SUPERADMIN } from "@/constants/users";
 import NoPartnerProfileFound from "@/components/dashboard/NoPartnerProfileFound";
@@ -309,12 +313,13 @@ function PagesContent() {
         );
     }
     
-    // Show login page if not authenticated
+    // Show public pages if not authenticated
     if (!session && !user) {
         return (
             <Routes>
+                <Route path="/" element={<Landing />} />
                 <Route path="/Login" element={<Login />} />
-                <Route path="*" element={<Navigate to="/Login" replace />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
         );
     }
@@ -345,20 +350,21 @@ function PagesContent() {
     
     return (
         <AuthGuard>
-            <Layout currentPageName={currentPage}>
-                <Routes>
-                    {/* Root redirect - based on STRICT role */}
-                    <Route path="/" element={
-                        userIsSuperadmin || userRole === 'admin'
-                            ? <Navigate to="/admin/dashboard" replace /> 
-                            : userIsPartner
-                            ? <Navigate to="/partner/dashboard" replace />
-                            : <Navigate to="/Login" replace />
-                    } />
-                    <Route path="/Unauthorized" element={<Unauthorized />} />
-                    
-                    {/* Partner Routes - ONLY accessible to partners */}
-                    {userIsPartner && (
+            <RouteGuard>
+                <Layout currentPageName={currentPage}>
+                    <Routes>
+                        {/* Root route - show landing page for unauthenticated, redirect for authenticated */}
+                        <Route path="/" element={
+                            userIsSuperadmin || userRole === 'admin'
+                                ? <Navigate to="/admin/dashboard" replace /> 
+                                : userIsPartner
+                                ? <Navigate to="/partner/dashboard" replace />
+                                : <Landing />
+                        } />
+                        <Route path="/Unauthorized" element={<Unauthorized />} />
+                        
+                        {/* Partner Routes - ONLY accessible to partners */}
+                        {userIsPartner && (
                         <>
                             {/* Explicit Partner Routes */}
                             <Route path="/partner/dashboard" element={<Dashboard />} />
@@ -470,6 +476,7 @@ function PagesContent() {
                                         <Route path="partners" element={<AdminPartners />} />
                                         <Route path="partners/new" element={<EditPartner />} />
                                         <Route path="partners/:id/edit" element={<EditPartner />} />
+                                        <Route path="operations" element={<AdminOperations />} />
                                         <Route path="deliverables" element={<AdminDeliverables />} />
                                         <Route path="submissions" element={<AdminSubmissions />} />
                                         
@@ -509,8 +516,9 @@ function PagesContent() {
                             ? <Navigate to="/partner/profile" replace />
                             : <Login />
                     } />
-                </Routes>
-            </Layout>
+                    </Routes>
+                </Layout>
+            </RouteGuard>
         </AuthGuard>
     );
 }

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>User Role Diagnostic Tool</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+    .section {
+      margin: 20px 0;
+      padding: 15px;
+      background: #252526;
+      border-radius: 5px;
+    }
+    .success { color: #4ec9b0; }
+    .error { color: #f48771; }
+    .warning { color: #dcdcaa; }
+    .info { color: #569cd6; }
+    pre {
+      background: #1e1e1e;
+      padding: 10px;
+      border-radius: 3px;
+      overflow-x: auto;
+    }
+    button {
+      background: #0e639c;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 3px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    button:hover {
+      background: #1177bb;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 User Role Diagnostic Tool</h1>
+  <p>Open this in your browser console after logging into the app, then run the diagnostic.</p>
+  
+  <div class="section">
+    <h2>Quick Check</h2>
+    <button onclick="quickCheck()">Run Quick Check</button>
+    <div id="quickResults"></div>
+  </div>
+
+  <div class="section">
+    <h2>Full Diagnostic</h2>
+    <button onclick="fullDiagnostic()">Run Full Diagnostic</button>
+    <div id="fullResults"></div>
+  </div>
+
+  <div class="section">
+    <h2>Fix Role (SQL)</h2>
+    <button onclick="generateSQL()">Generate SQL Fix</button>
+    <div id="sqlResults"></div>
+  </div>
+
+  <script>
+    // This should be run in the browser console after the app loads
+    // Copy the supabase client from the app
+    
+    async function quickCheck() {
+      const results = document.getElementById('quickResults');
+      results.innerHTML = '<p class="info">Checking...</p>';
+      
+      try {
+        // Get supabase from window if available
+        const supabase = window.supabase || (window.__SUPABASE__?.supabase);
+        
+        if (!supabase) {
+          results.innerHTML = '<p class="error">❌ Supabase client not found. Please run this in the browser console after the app loads.</p>';
+          return;
+        }
+        
+        const { data: { user }, error } = await supabase.auth.getUser();
+        
+        if (error || !user) {
+          results.innerHTML = `<p class="error">❌ No user found: ${error?.message || 'Not logged in'}</p>`;
+          return;
+        }
+        
+        const SUPERADMIN = {
+          uid: '03caabd2-4e51-4a50-9cff-ec66f4aa1011',
+          email: 'hayat.malik6@gmail.com',
+        };
+        
+        const isSuperadminByConstant = 
+          user.id === SUPERADMIN.uid || 
+          user.email?.toLowerCase() === SUPERADMIN.email.toLowerCase();
+        
+        let html = '<h3>Current User:</h3>';
+        html += `<p><strong>ID:</strong> ${user.id}</p>`;
+        html += `<p><strong>Email:</strong> ${user.email}</p>`;
+        html += `<p><strong>app_metadata.role:</strong> ${user.app_metadata?.role || 'null'}</p>`;
+        html += `<p><strong>user_metadata.role:</strong> ${user.user_metadata?.role || 'null'}</p>`;
+        
+        html += '<h3>SUPERADMIN Check:</h3>';
+        html += `<p class="${user.id === SUPERADMIN.uid ? 'success' : 'error'}">UID Match: ${user.id === SUPERADMIN.uid ? '✅ YES' : '❌ NO'}</p>`;
+        html += `<p class="${user.email?.toLowerCase() === SUPERADMIN.email.toLowerCase() ? 'success' : 'error'}">Email Match: ${user.email?.toLowerCase() === SUPERADMIN.email.toLowerCase() ? '✅ YES' : '❌ NO'}</p>`;
+        html += `<p class="${isSuperadminByConstant ? 'success' : 'error'}">Should be superadmin: ${isSuperadminByConstant ? '✅ YES' : '❌ NO'}</p>`;
+        
+        // Check partner_users
+        const { data: partnerUser } = await supabase
+          .from('partner_users')
+          .select('*')
+          .eq('auth_user_id', user.id)
+          .single();
+        
+        html += '<h3>Database Check:</h3>';
+        if (partnerUser) {
+          html += `<p class="success">✅ Found in partner_users table</p>`;
+          html += `<p><strong>Role:</strong> ${partnerUser.role}</p>`;
+          html += `<p class="${partnerUser.role === 'superadmin' || partnerUser.role === 'sef_admin' ? 'success' : 'error'}">Role is superadmin: ${partnerUser.role === 'superadmin' || partnerUser.role === 'sef_admin' ? '✅ YES' : '❌ NO'}</p>`;
+        } else {
+          html += `<p class="error">❌ NOT found in partner_users table</p>`;
+        }
+        
+        results.innerHTML = html;
+      } catch (error) {
+        results.innerHTML = `<p class="error">❌ Error: ${error.message}</p>`;
+      }
+    }
+    
+    async function fullDiagnostic() {
+      const results = document.getElementById('fullResults');
+      results.innerHTML = '<p class="info">Running full diagnostic...</p>';
+      
+      // Similar to quickCheck but more detailed
+      await quickCheck();
+      results.innerHTML = document.getElementById('quickResults').innerHTML;
+    }
+    
+    async function generateSQL() {
+      const results = document.getElementById('sqlResults');
+      results.innerHTML = '<p class="info">Generating SQL...</p>';
+      
+      try {
+        const supabase = window.supabase || (window.__SUPABASE__?.supabase);
+        
+        if (!supabase) {
+          results.innerHTML = '<p class="error">❌ Supabase client not found</p>';
+          return;
+        }
+        
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          results.innerHTML = '<p class="error">❌ No user found</p>';
+          return;
+        }
+        
+        const sql = `-- Fix Superadmin Role for ${user.email}
+-- Run this in Supabase SQL Editor
+
+-- Step 1: Insert or Update partner_users
+INSERT INTO partner_users (auth_user_id, email, full_name, role, partner_id)
+VALUES (
+  '${user.id}',
+  '${user.email}',
+  'Super Admin',
+  'superadmin',
+  NULL
+)
+ON CONFLICT (auth_user_id) 
+DO UPDATE SET
+  role = 'superadmin',
+  email = '${user.email}',
+  full_name = COALESCE(partner_users.full_name, 'Super Admin');
+
+-- Step 2: Verify
+SELECT 
+  u.id as auth_user_id,
+  u.email,
+  pu.role as partner_user_role
+FROM auth.users u
+LEFT JOIN partner_users pu ON pu.auth_user_id = u.id
+WHERE u.id = '${user.id}';`;
+        
+        results.innerHTML = `<pre>${sql}</pre><button onclick="copySQL()">Copy SQL</button>`;
+        window._generatedSQL = sql;
+      } catch (error) {
+        results.innerHTML = `<p class="error">❌ Error: ${error.message}</p>`;
+      }
+    }
+    
+    function copySQL() {
+      if (window._generatedSQL) {
+        navigator.clipboard.writeText(window._generatedSQL);
+        alert('SQL copied to clipboard!');
+      }
+    }
+  </script>
+</body>
+</html>
+

@@ -11,6 +11,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 import { 
   FileText, 
   Award, 
@@ -31,10 +32,22 @@ import AdminNotificationWidget from "../components/dashboard/AdminNotificationWi
 import QuickActions from "../components/dashboard/QuickActions";
 
 export default function Dashboard() {
-  const { user, partner, partnerContext } = useAuth();
+  const { user, partner, partnerContext, role, loading } = useAuth();
   
-  // Get user role - Fixed logic
-  const userRole = user?.role || null;
+  // Show loading state while role is being resolved
+  if (loading || !role) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Get user role from context (source of truth)
+  const userRole = role;
   
   // Role-based routing logic
   console.log('🔐 Dashboard - Role Check:', {
@@ -50,7 +63,7 @@ export default function Dashboard() {
   }
   
   // If superadmin → show Admin Dashboard (full control panel)
-  if (userRole === 'superadmin' || userRole === 'sef_admin') {
+  if (userRole === 'superadmin') {
     return <AdminFullDashboard />;
   }
   
@@ -91,61 +104,76 @@ function AdminFullDashboard() {
   const { user } = useAuth();
 
   // Admin-specific data
-  const { data: allPartners = [] } = useQuery({
+  const { data: allPartners = [], isLoading: loadingPartners, error: partnersError } = useQuery({
     queryKey: ['allPartners'],
     queryFn: async () => {
       try {
+        console.log('[AdminFullDashboard] Fetching all partners...');
         const result = await partnersService.getAll();
+        console.log('[AdminFullDashboard] Fetched partners:', result?.length || 0);
         return result || [];
       } catch (error) {
-        console.error('Error fetching all partners:', error);
-        return [];
+        console.error('[AdminFullDashboard] Error fetching all partners:', error);
+        throw error; // Re-throw to let React Query handle it
       }
     },
     enabled: !!user,
-    retry: 1,
+    retry: 2,
+    staleTime: 30000, // Cache for 30 seconds
   });
 
-  const { data: allDeliverables = [] } = useQuery({
+  const { data: allDeliverables = [], isLoading: loadingDeliverables, error: deliverablesError } = useQuery({
     queryKey: ['allDeliverables'],
     queryFn: async () => {
       try {
+        console.log('[AdminFullDashboard] Fetching all deliverables...');
         const result = await deliverablesService.getAll();
+        console.log('[AdminFullDashboard] Fetched deliverables:', result?.length || 0);
         return result || [];
       } catch (error) {
-        console.error('Error fetching all deliverables:', error);
-        return [];
+        console.error('[AdminFullDashboard] Error fetching all deliverables:', error);
+        throw error;
       }
     },
     enabled: !!user,
-    retry: 1,
+    retry: 2,
+    staleTime: 30000,
   });
 
-  const { data: allNominations = [] } = useQuery({
+  const { data: allNominations = [], isLoading: loadingNominations, error: nominationsError } = useQuery({
     queryKey: ['allNominations'],
     queryFn: async () => {
       try {
+        console.log('[AdminFullDashboard] Fetching all nominations...');
         const result = await nominationsService.getAll();
+        console.log('[AdminFullDashboard] Fetched nominations:', result?.length || 0);
         return result || [];
       } catch (error) {
-        console.error('Error fetching all nominations:', error);
-        return [];
+        console.error('[AdminFullDashboard] Error fetching all nominations:', error);
+        throw error;
       }
     },
     enabled: !!user,
-    retry: 1,
+    retry: 2,
+    staleTime: 30000,
   });
 
   const safeAllPartners = Array.isArray(allPartners) ? allPartners : [];
   const safeAllDeliverables = Array.isArray(allDeliverables) ? allDeliverables : [];
   const safeAllNominations = Array.isArray(allNominations) ? allNominations : [];
   
+  // Show loading state if any query is loading
+  const isLoading = loadingPartners || loadingDeliverables || loadingNominations;
+  
+  // Show error state if any query has an error
+  const hasError = partnersError || deliverablesError || nominationsError;
+  
   const totalPartners = safeAllPartners.length;
-  const pendingDeliverables = safeAllDeliverables.filter(d => d?.status === 'Pending Review').length;
-  const approvedDeliverables = safeAllDeliverables.filter(d => d?.status === 'Approved').length;
-  const rejectedDeliverables = safeAllDeliverables.filter(d => d?.status === 'Rejected').length;
-  const pendingNominations = safeAllNominations.filter(n => n?.status && ['Submitted', 'Under Review'].includes(n.status)).length;
-  const approvedNominations = safeAllNominations.filter(n => n?.status === 'Approved').length;
+  const pendingDeliverables = safeAllDeliverables.filter(d => d?.status === 'Pending Review' || d?.status === 'pending_review').length;
+  const approvedDeliverables = safeAllDeliverables.filter(d => d?.status === 'Approved' || d?.status === 'approved').length;
+  const rejectedDeliverables = safeAllDeliverables.filter(d => d?.status === 'Rejected' || d?.status === 'rejected').length;
+  const pendingNominations = safeAllNominations.filter(n => n?.status && ['Submitted', 'Under Review', 'submitted', 'under_review'].includes(n.status)).length;
+  const approvedNominations = safeAllNominations.filter(n => n?.status === 'Approved' || n?.status === 'approved').length;
   
   const totalAllocated = safeAllPartners.reduce((sum, p) => sum + (p?.allocated_amount || 0), 0);
   const deliverableApprovalRate = safeAllDeliverables.length > 0 
@@ -157,8 +185,55 @@ function AdminFullDashboard() {
 
   const recentActivity = [];
 
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="p-4 md:p-8 max-w-7xl mx-auto">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading dashboard data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (hasError) {
+    return (
+      <div className="p-4 md:p-8 max-w-7xl mx-auto">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-red-800 mb-2">Error Loading Dashboard</h3>
+          <p className="text-red-600 mb-4">
+            {partnersError && `Partners: ${partnersError.message}`}
+            {deliverablesError && `Deliverables: ${deliverablesError.message}`}
+            {nominationsError && `Nominations: ${nominationsError.message}`}
+          </p>
+          <Button onClick={() => window.location.reload()} variant="outline">
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      {/* Show warning banner for non-critical errors */}
+      {showNominationsWarning && (
+        <Card className="border-yellow-200 bg-yellow-50 mb-4">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-yellow-600" />
+              <p className="text-sm text-yellow-800">
+                Could not load nominations data. Dashboard is showing other information.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -404,61 +479,76 @@ function AdminDashboardLite() {
   const { user } = useAuth();
 
   // Admin-specific data (same as full dashboard but without superadmin features)
-  const { data: allPartners = [] } = useQuery({
+  const { data: allPartners = [], isLoading: loadingPartners, error: partnersError } = useQuery({
     queryKey: ['allPartners'],
     queryFn: async () => {
       try {
+        console.log('[AdminDashboardLite] Fetching all partners...');
         const result = await partnersService.getAll();
+        console.log('[AdminDashboardLite] Fetched partners:', result?.length || 0);
         return result || [];
       } catch (error) {
-        console.error('Error fetching all partners:', error);
-        return [];
+        console.error('[AdminDashboardLite] Error fetching all partners:', error);
+        throw error;
       }
     },
     enabled: !!user,
-    retry: 1,
+    retry: 2,
+    staleTime: 30000,
   });
 
-  const { data: allDeliverables = [] } = useQuery({
+  const { data: allDeliverables = [], isLoading: loadingDeliverables, error: deliverablesError } = useQuery({
     queryKey: ['allDeliverables'],
     queryFn: async () => {
       try {
+        console.log('[AdminDashboardLite] Fetching all deliverables...');
         const result = await deliverablesService.getAll();
+        console.log('[AdminDashboardLite] Fetched deliverables:', result?.length || 0);
         return result || [];
       } catch (error) {
-        console.error('Error fetching all deliverables:', error);
-        return [];
+        console.error('[AdminDashboardLite] Error fetching all deliverables:', error);
+        throw error;
       }
     },
     enabled: !!user,
-    retry: 1,
+    retry: 2,
+    staleTime: 30000,
   });
 
-  const { data: allNominations = [] } = useQuery({
+  const { data: allNominations = [], isLoading: loadingNominations, error: nominationsError } = useQuery({
     queryKey: ['allNominations'],
     queryFn: async () => {
       try {
+        console.log('[AdminDashboardLite] Fetching all nominations...');
         const result = await nominationsService.getAll();
+        console.log('[AdminDashboardLite] Fetched nominations:', result?.length || 0);
         return result || [];
       } catch (error) {
-        console.error('Error fetching all nominations:', error);
-        return [];
+        console.error('[AdminDashboardLite] Error fetching all nominations:', error);
+        throw error;
       }
     },
     enabled: !!user,
-    retry: 1,
+    retry: 2,
+    staleTime: 30000,
   });
 
   const safeAllPartners = Array.isArray(allPartners) ? allPartners : [];
   const safeAllDeliverables = Array.isArray(allDeliverables) ? allDeliverables : [];
   const safeAllNominations = Array.isArray(allNominations) ? allNominations : [];
   
+  // Show loading state if any query is loading
+  const isLoading = loadingPartners || loadingDeliverables || loadingNominations;
+  
+  // Show error state if any query has an error
+  const hasError = partnersError || deliverablesError || nominationsError;
+  
   const totalPartners = safeAllPartners.length;
-  const pendingDeliverables = safeAllDeliverables.filter(d => d?.status === 'Pending Review').length;
-  const approvedDeliverables = safeAllDeliverables.filter(d => d?.status === 'Approved').length;
-  const rejectedDeliverables = safeAllDeliverables.filter(d => d?.status === 'Rejected').length;
-  const pendingNominations = safeAllNominations.filter(n => n?.status && ['Submitted', 'Under Review'].includes(n.status)).length;
-  const approvedNominations = safeAllNominations.filter(n => n?.status === 'Approved').length;
+  const pendingDeliverables = safeAllDeliverables.filter(d => d?.status === 'Pending Review' || d?.status === 'pending_review').length;
+  const approvedDeliverables = safeAllDeliverables.filter(d => d?.status === 'Approved' || d?.status === 'approved').length;
+  const rejectedDeliverables = safeAllDeliverables.filter(d => d?.status === 'Rejected' || d?.status === 'rejected').length;
+  const pendingNominations = safeAllNominations.filter(n => n?.status && ['Submitted', 'Under Review', 'submitted', 'under_review'].includes(n.status)).length;
+  const approvedNominations = safeAllNominations.filter(n => n?.status === 'Approved' || n?.status === 'approved').length;
   
   const deliverableApprovalRate = safeAllDeliverables.length > 0 
     ? Math.round((approvedDeliverables / safeAllDeliverables.length) * 100) 
@@ -466,6 +556,39 @@ function AdminDashboardLite() {
   const nominationApprovalRate = safeAllNominations.length > 0
     ? Math.round((approvedNominations / safeAllNominations.length) * 100)
     : 0;
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="p-4 md:p-8 max-w-7xl mx-auto">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading dashboard data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (hasError) {
+    return (
+      <div className="p-4 md:p-8 max-w-7xl mx-auto">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-red-800 mb-2">Error Loading Dashboard</h3>
+          <p className="text-red-600 mb-4">
+            {partnersError && `Partners: ${partnersError.message}`}
+            {deliverablesError && `Deliverables: ${deliverablesError.message}`}
+            {nominationsError && `Nominations: ${nominationsError.message}`}
+          </p>
+          <Button onClick={() => window.location.reload()} variant="outline">
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto">

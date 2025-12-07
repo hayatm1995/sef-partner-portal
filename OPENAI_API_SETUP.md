@@ -12,7 +12,7 @@ Your OpenAI API key has been configured for:
 
 The API key has been added to `.env.local`:
 ```
-VITE_OPENAI_API_KEY=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
+VITE_OPENAI_API_KEY=your-api-key-here
 ```
 
 **⚠️ Security Note:** The `.env.local` file is in `.gitignore` and will NOT be committed to git.

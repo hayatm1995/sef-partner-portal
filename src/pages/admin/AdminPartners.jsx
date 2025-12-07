@@ -29,8 +29,11 @@ import {
   Search, Edit, Trash2, Plus, Building2, Users, 
   TrendingUp, AlertCircle, Loader2 
 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import Breadcrumbs from "@/components/common/Breadcrumbs";
+import OperationsTable from "@/components/admin/OperationsTable";
+import PartnerProfileModal from "@/components/admin/PartnerProfileModal";
 
 export default function AdminPartners() {
   const navigate = useNavigate();
@@ -38,6 +41,8 @@ export default function AdminPartners() {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [partnerToDelete, setPartnerToDelete] = useState(null);
+  const [selectedPartnerId, setSelectedPartnerId] = useState(null);
+  const [activeTab, setActiveTab] = useState("partners");
 
   // STRICT: Check if user is superadmin - use role from context
   const { role } = useAuth();
@@ -181,6 +186,14 @@ export default function AdminPartners() {
         </Button>
       </div>
 
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
+        <TabsList>
+          <TabsTrigger value="partners">Partners</TabsTrigger>
+          <TabsTrigger value="operations">Operations</TabsTrigger>
+        </TabsList>
+
+        {/* Partners Tab */}
+        <TabsContent value="partners" className="mt-6">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -310,6 +323,30 @@ export default function AdminPartners() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        {/* Operations Tab */}
+        <TabsContent value="operations" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Operations Console</CardTitle>
+              <p className="text-sm text-gray-600 mt-2">
+                Monitor partner progress, overdue deliverables, and manage assignments
+              </p>
+            </CardHeader>
+            <CardContent>
+              <OperationsTable onPartnerClick={setSelectedPartnerId} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Partner Profile Modal */}
+      <PartnerProfileModal
+        partnerId={selectedPartnerId}
+        open={!!selectedPartnerId}
+        onClose={() => setSelectedPartnerId(null)}
+      />
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!partnerToDelete} onOpenChange={() => setPartnerToDelete(null)}>

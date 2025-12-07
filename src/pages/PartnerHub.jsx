@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { contractsService } from "@/services/supabaseService";
+import { partnerFeaturesService } from "@/services/partnerFeaturesService";
 import { supabase } from "@/config/supabase";
 import { toast } from "sonner";
 import { Download, Upload, CheckCircle } from "lucide-react";
@@ -56,41 +57,143 @@ import DeliverablesSection from "../components/partnerhub/DeliverablesSection";
 export default function PartnerHub() {
   const [activeTab, setActiveTab] = useState("profile");
   const location = useLocation();
-  const { user, partner } = useAuth();
+  const { user, partner, role, partnerId, loading: authLoading } = useAuth();
 
   const urlParams = new URLSearchParams(location.search);
   const viewAsPartnerId = urlParams.get('viewAs');
-  const currentPartnerId = viewAsPartnerId || partner?.id;
+  
+  // Fetch partner_id from partner_users table if not already available
+  const { data: partnerUserData, isLoading: loadingPartnerUser } = useQuery({
+    queryKey: ['partnerUser', user?.id, user?.email],
+    queryFn: async () => {
+      if (!user?.id && !user?.email) return null;
+      
+      try {
+        const { partnerUsersService } = await import('@/services/supabaseService');
+        
+        // Try by auth_user_id first
+        if (user?.id) {
+          const { data, error } = await supabase
+            .from('partner_users')
+            .select('*, partners(*)')
+            .eq('auth_user_id', user.id)
+            .single();
+          
+          if (!error && data) {
+            console.log('[PartnerHub] Found partner_user by auth_user_id:', data);
+            return data;
+          }
+        }
+        
+        // Fallback to email
+        if (user?.email) {
+          const data = await partnerUsersService.getByEmail(user.email);
+          if (data) {
+            console.log('[PartnerHub] Found partner_user by email:', data);
+            return data;
+          }
+        }
+        
+        console.log('[PartnerHub] No partner_user found for user:', { id: user?.id, email: user?.email });
+        return null;
+      } catch (error) {
+        console.error('[PartnerHub] Error fetching partner_user:', error);
+        return null;
+      }
+    },
+    enabled: !!user && (!!user.id || !!user.email) && !viewAsPartnerId && role === 'partner',
+    retry: 1,
+  });
+
+  // Determine current partner ID
+  const resolvedPartnerId = viewAsPartnerId || partnerId || partnerUserData?.partner_id || partner?.id;
+  const currentPartnerId = resolvedPartnerId;
   
   // For VIP section, we'll pass partner email from user context
-  const effectivePartnerEmail = user?.email || user?.partner_user?.email || '';
-  const isAdminGlobalView = (user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin) && !viewAsPartnerId;
+  const effectivePartnerEmail = user?.email || partnerUserData?.email || '';
+  const isAdminGlobalView = (role === 'admin' || role === 'superadmin') && !viewAsPartnerId;
+
+  // Show loading state while fetching partner data
+  const isLoading = authLoading || (role === 'partner' && !currentPartnerId && loadingPartnerUser);
 
   // Fetch partner data for allocations
-  const { data: currentPartner } = useQuery({
+  const { data: currentPartner, isLoading: loadingPartner } = useQuery({
     queryKey: ['partner', currentPartnerId],
     queryFn: async () => {
       if (!currentPartnerId) return null;
       try {
         const { partnersService } = await import('@/services/supabaseService');
-        return await partnersService.getById(currentPartnerId);
+        const partnerData = await partnersService.getById(currentPartnerId);
+        console.log('[PartnerHub] Fetched partner data:', partnerData);
+        return partnerData;
       } catch (error) {
-        console.error('Error fetching partner:', error);
-        return partner;
+        console.error('[PartnerHub] Error fetching partner:', error);
+        return partner || partnerUserData?.partners || null;
       }
     },
     enabled: !!currentPartnerId && !isAdminGlobalView,
-    initialData: partner,
+    initialData: partner || partnerUserData?.partners || null,
   });
 
+  // Show loading state
+  if (isLoading || loadingPartner) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-gray-50 to-stone-50">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading Partner Hub...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error if partner not found (for actual partners, not admins)
+  if (role === 'partner' && !currentPartnerId && !isAdminGlobalView) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-gray-50 to-stone-50">
+        <div className="max-w-md mx-auto p-8">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+            <h3 className="text-lg font-semibold text-red-800 mb-2">Partner Profile Not Found</h3>
+            <p className="text-red-600 mb-4">
+              Your account is not associated with a partner profile. Please contact your administrator.
+            </p>
+            <p className="text-sm text-red-500">Email: {user?.email}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const isAdmin = user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin;
-  const visibleHubSections = currentPartner?.visible_hub_sections || [];
+  
+  // Fetch enabled features for current partner
+  const { data: enabledFeatures = [] } = useQuery({
+    queryKey: ['partnerFeatures', currentPartnerId],
+    queryFn: async () => {
+      if (!currentPartnerId) return [];
+      return await partnerFeaturesService.getEnabledFeatures(currentPartnerId);
+    },
+    enabled: !!currentPartnerId && !isAdmin, // Only fetch for partners, admins see all
+  });
+  
+  // Map section IDs to feature names (matching the new feature names from requirements)
+  const sectionToFeatureMap = {
+    'profile': 'Company Profile',
+    'deliverables': 'Deliverables',
+    'booth': 'Booth Options',
+    'vip': 'VIP Guest List',
+    'payments': 'Payments',
+    'legal': 'Legal & Branding',
+    'nominations': 'Nominations',
+    'media': 'Media Uploads',
+    'speakers': 'Speaker Requests',
+  };
   
   const hasSection = (section) => {
-    if (isAdmin) return true;
+    // Admins always see all sections (when not viewing as partner)
+    if (isAdmin && !viewAsPartnerId) return true;
     
     // Special handling for pitch_judge and seffy_judge based on partner flags
-    // Note: These flags would need to be added to partners table if needed
     if (section === 'pitch_judge') {
       return currentPartner?.show_pitch_competition === true;
     }
@@ -98,14 +201,35 @@ export default function PartnerHub() {
       return currentPartner?.show_seffy_awards === true;
     }
     
-    // Deliverables section should always be visible (it uses currentPartnerId from AuthContext)
-    if (section === 'deliverables') {
-      return true;
+    // Check if section is mapped to a feature
+    const featureName = sectionToFeatureMap[section];
+    if (featureName) {
+      // If no features loaded yet, default to showing (backward compatibility)
+      if (!currentPartnerId || enabledFeatures.length === 0) {
+        return true;
+      }
+      // If feature is enabled, show section
+      return enabledFeatures.includes(featureName);
     }
     
-    if (!currentPartner || visibleHubSections.length === 0) return true;
-    return visibleHubSections.includes(section);
+    // For sections not in the feature map, default to visible (backward compatibility)
+    return true;
   };
+
+  // Calculate progress based on enabled features
+  const calculateProgress = () => {
+    if (isAdmin && !viewAsPartnerId) return null; // Don't show progress for admin view
+    
+    if (!currentPartnerId || enabledFeatures.length === 0) return null;
+    
+    // Count enabled features vs total features
+    const totalFeatures = Object.keys(sectionToFeatureMap).length;
+    const enabledCount = enabledFeatures.filter(f => Object.values(sectionToFeatureMap).includes(f)).length;
+    
+    return totalFeatures > 0 ? Math.round((enabledCount / totalFeatures) * 100) : 0;
+  };
+
+  const progressPercentage = calculateProgress();
 
   const allTabs = [
     { 
@@ -275,11 +399,25 @@ export default function PartnerHub() {
               <Card className="border-2 border-white/20 bg-white/10 backdrop-blur-xl shadow-2xl">
                 <CardContent className="p-6">
                   <div className="flex items-center gap-4">
-                    <div>
+                    <div className="flex-1">
                       <p className="text-xs text-orange-100 font-semibold uppercase tracking-wider mb-2">
                         {viewAsPartnerId ? 'Viewing As' : 'Your Company'}
                       </p>
                       <p className="font-bold text-2xl text-white">{user.company_name}</p>
+                      {progressPercentage !== null && (
+                        <div className="mt-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs text-orange-100">Portal Access</span>
+                            <span className="text-xs font-semibold text-white">{progressPercentage}%</span>
+                          </div>
+                          <div className="w-full bg-white/20 rounded-full h-2">
+                            <div 
+                              className="bg-white rounded-full h-2 transition-all duration-300"
+                              style={{ width: `${progressPercentage}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                     {currentPartner?.tier && (
                       <Badge className="bg-white text-orange-600 px-5 py-2 text-base font-bold shadow-lg">
@@ -343,13 +481,24 @@ export default function PartnerHub() {
               </div>
 
               {activeTabData && (
-                <motion.div
-                  key={activeTab}
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, type: "spring", stiffness: 100 }}
-                  className="relative overflow-hidden"
-                >
+                !hasSection(activeTabData.section) && !isAdmin ? (
+                  <Card className="border-orange-200 bg-orange-50">
+                    <CardContent className="p-8 text-center">
+                      <Shield className="w-12 h-12 text-orange-500 mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold text-orange-900 mb-2">Feature Not Available</h3>
+                      <p className="text-orange-700">
+                        This section is not available for your partner account. Please contact your account manager if you need access.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <motion.div
+                    key={activeTab}
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, type: "spring", stiffness: 100 }}
+                    className="relative overflow-hidden"
+                  >
                   <div className={`absolute inset-0 bg-gradient-to-r ${activeTabData.gradient} opacity-90`}></div>
                   <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNnoiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLW9wYWNpdHk9Ii4xIiBzdHJva2Utd2lkdGg9IjIiLz48L2c+PC9zdmc+')] opacity-20"></div>
                   <div className="relative px-8 py-8">
@@ -393,7 +542,8 @@ export default function PartnerHub() {
                       </div>
                     </div>
                   </div>
-                </motion.div>
+                  </motion.div>
+                )
               )}
 
               <div className="p-8">

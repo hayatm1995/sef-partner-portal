@@ -44,10 +44,11 @@ export default function RoleGuard({
   // Only 'superadmin' or 'partner' - no fallback behavior
   const userRole = role || getUserRoleSync(user, role);
   const isSuperAdmin = userRole === 'superadmin';
+  const isAdmin = userRole === 'admin' || isSuperAdmin;
   const isPartner = userRole === 'partner';
   
-  // Validate role
-  if (userRole && !['superadmin', 'partner'].includes(userRole)) {
+  // Validate role - includes 'admin' now
+  if (userRole && !['superadmin', 'admin', 'partner'].includes(userRole)) {
     console.error('[RoleGuard] Invalid role:', userRole);
     return <Navigate to="/Unauthorized" replace />;
   }
@@ -56,11 +57,11 @@ export default function RoleGuard({
   let hasAccess = false;
 
   if (requireAdmin) {
-    // Admin routes: STRICT - require superadmin only
-    hasAccess = isSuperAdmin;
+    // Admin routes: require admin or superadmin
+    hasAccess = isAdmin;
   } else if (requirePartner) {
-    // Partner routes: STRICT - only partners (not superadmin)
-    hasAccess = isPartner && !isSuperAdmin;
+    // Partner routes: STRICT - only partners (not admin/superadmin)
+    hasAccess = isPartner && !isAdmin;
   } else if (allowedRoles.length > 0) {
     // Specific roles allowed
     hasAccess = allowedRoles.includes(userRole) || (isSuperAdmin && allowedRoles.includes('superadmin'));

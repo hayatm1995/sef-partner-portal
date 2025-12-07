@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { activityLogService } from "@/services/supabaseService";
+import { supabase } from "@/config/supabase";
 import { useQuery } from "@tanstack/react-query";
 import SplashScreen from "@/components/common/SplashScreen";
 import {
@@ -21,6 +22,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -78,7 +81,7 @@ import { useAuth } from "@/contexts/AuthContext";
 export default function Layout({ children, currentPageName }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, partner, partnerUser, role, loading: authLoading, loginAsTestUser, viewMode, switchViewMode } = useAuth();
+  const { user, partner, partnerUser, role, partnerId, loading: authLoading, loginAsTestUser, viewMode, switchViewMode, viewingAsPartnerId, setViewingAsPartner, clearViewAsPartner } = useAuth();
   const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
   const [pageStartTime, setPageStartTime] = useState(Date.now());
   const [showSplash, setShowSplash] = useState(true);
@@ -89,14 +92,37 @@ export default function Layout({ children, currentPageName }) {
   // MUST be defined BEFORE any useQuery hooks that depend on it
   const userRole = role || user?.role;
   
+  // Log role detection for debugging
+  console.log('[Layout] Role detection:', {
+    role,
+    userRole,
+    userRoleFromUser: user?.role,
+    userId: user?.id,
+    userEmail: user?.email,
+    partnerId,
+    loading: authLoading
+  });
+  
   // STRICT: Only 'superadmin', 'admin', or 'partner' - no fallback behavior
   const isSuperAdmin = userRole === 'superadmin';
   const isAdmin = userRole === 'admin' || isSuperAdmin; // Admin includes superadmin
   const isPartner = userRole === 'partner';
   
   // If role is not valid, don't show any sidebar
-  if (!isSuperAdmin && !isAdmin && !isPartner) {
+  if (!authLoading && !isSuperAdmin && !isAdmin && !isPartner) {
     console.error('[Layout] Invalid role:', userRole);
+  }
+  
+  // Show loading state until role is resolved
+  if (authLoading || (user && !userRole)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-gray-50 to-stone-50">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
   }
 
   // Get all partners (for admin view)
@@ -104,11 +130,13 @@ export default function Layout({ children, currentPageName }) {
   const isDevModeLayout = typeof window !== 'undefined' && 
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   
-  const { data: allPartners = [] } = useQuery({
+  const { data: allPartners = [], isLoading: loadingPartners, error: partnersError } = useQuery({
     queryKey: ['allPartners'],
     queryFn: async () => {
+      console.log('[Layout] Fetching all partners for dropdown...');
       const { partnersService } = await import('@/services/supabaseService');
       const partners = await partnersService.getAll();
+      console.log('[Layout] Fetched partners:', partners?.length || 0);
       
       // In dev mode, ensure Demo Partner exists in the list
       if (isDevModeLayout) {
@@ -149,41 +177,106 @@ export default function Layout({ children, currentPageName }) {
       
       return partners;
     },
-    enabled: !!user && isSuperAdmin,
+    enabled: !!user && !!userRole && isAdmin, // Both admin and superadmin can see all partners, but wait for role
+    retry: 2,
+    staleTime: 30000,
   });
+  
+  // Debug logging for partners query
+  React.useEffect(() => {
+    console.log('[Layout] Partners Query Debug:', {
+      user: !!user,
+      userRole,
+      isAdmin,
+      enabled: !!user && !!userRole && isAdmin,
+      partnersCount: allPartners.length,
+      loading: loadingPartners,
+      error: partnersError,
+    });
+  }, [user, userRole, isAdmin, allPartners.length, loadingPartners, partnersError]);
 
   // Get all partner users (for admin view)
-  const { data: allPartnerUsers = [] } = useQuery({
-    queryKey: ['allPartnerUsers'],
+  // Get all users for view-as dropdown (filtered by role)
+  const { data: allUsersForDropdown = [], isLoading: loadingUsersForDropdown } = useQuery({
+    queryKey: ['allUsersForDropdown', userRole],
     queryFn: async () => {
+      console.log('[Layout] Fetching users for dropdown, role:', userRole);
       const { partnerUsersService } = await import('@/services/supabaseService');
-      const partners = await partnersService.getAll();
-      const allUsers = [];
-      for (const p of partners) {
-        const users = await partnerUsersService.getByPartnerId(p.id);
-        allUsers.push(...users);
+      
+      // Superadmin: Get all users (admins + partners)
+      if (isSuperAdmin) {
+        console.log('[Layout] Superadmin: Fetching all users (admins + partners)');
+        const partners = await partnersService.getAll();
+        const allUsers = [];
+        
+        // Get all partner users
+        for (const p of partners) {
+          const users = await partnerUsersService.getByPartnerId(p.id);
+          allUsers.push(...users);
+        }
+        
+        // Also get admin users (users with role 'admin' or 'superadmin' in partner_users)
+        const { data: adminUsers, error: adminError } = await supabase
+          .from('partner_users')
+          .select('full_name, email, role, partner_id, id')
+          .in('role', ['admin', 'superadmin'])
+          .order('full_name');
+          
+        if (adminUsers && !adminError) {
+          console.log('[Layout] Found admin users:', adminUsers.length);
+          allUsers.push(...adminUsers);
+        } else if (adminError) {
+          console.error('[Layout] Error fetching admin users:', adminError);
+        }
+        
+        console.log('[Layout] Total users for superadmin dropdown:', allUsers.length);
+        return allUsers;
       }
-      return allUsers;
+      
+      // Admin: Get only partner users (not admins)
+      if (isAdmin) {
+        console.log('[Layout] Admin: Fetching partner users only');
+        const partners = await partnersService.getAll();
+        const allUsers = [];
+        for (const p of partners) {
+          const users = await partnerUsersService.getByPartnerId(p.id);
+          // Filter out admin users
+          const partnerUsers = users.filter(u => u.role === 'partner' || !u.role);
+          allUsers.push(...partnerUsers);
+        }
+        console.log('[Layout] Total partner users for admin dropdown:', allUsers.length);
+        return allUsers;
+      }
+      
+      return [];
     },
-    enabled: !!user && isSuperAdmin,
+    enabled: !!user && !!userRole && isAdmin, // Both admin and superadmin can use view-as, but wait for role
+    retry: 2,
+    staleTime: 30000, // Cache for 30 seconds
   });
 
-  const effectivePartnerId = (() => {
-    const urlParams = new URLSearchParams(location.search);
-    const viewAsParam = urlParams.get('viewAs');
-    if (viewAsParam && isSuperAdmin) {
-      return viewAsParam; // This would be partner_id when viewing as partner
-    }
-    return user?.partner_id;
-  })();
+  // Use view-as-partner state from context (does NOT overwrite primary role)
+  // Also check URL param for backward compatibility
+  const urlParams = new URLSearchParams(location.search);
+  const viewAsParam = urlParams.get('viewAs');
+  const effectiveViewingAsPartnerId = viewingAsPartnerId || (viewAsParam && isAdmin ? viewAsParam : null);
   
-  const viewingAsPartnerId = effectivePartnerId !== user?.partner_id ? effectivePartnerId : null;
-  const viewingAsPartner = viewingAsPartnerId ? allPartners.find(p => p.id === viewingAsPartnerId) : null;
+  // If URL param exists but context doesn't have it, sync it
+  React.useEffect(() => {
+    if (viewAsParam && isAdmin && !viewingAsPartnerId) {
+      setViewingAsPartner(viewAsParam);
+    }
+  }, [viewAsParam, isAdmin, viewingAsPartnerId, setViewingAsPartner]);
+  
+  const viewingAsPartner = effectiveViewingAsPartnerId ? allPartners.find(p => p.id === effectiveViewingAsPartnerId) : null;
+  
+  // Effective partner ID for data queries (view-as takes precedence)
+  const effectivePartnerId = effectiveViewingAsPartnerId || user?.partner_id;
 
   const addPartnerViewParam = (url) => {
-    if (viewingAsPartnerId && url) {
+    if (effectiveViewingAsPartnerId && url) {
       const separator = url.includes('?') ? '&' : '?';
-      return `${url}${separator}viewAs=${encodeURIComponent(viewingAsPartnerId)}`;
+      return `${url}${separator}viewAs=${encodeURIComponent(effectiveViewingAsPartnerId)}`;
     }
     return url;
   };
@@ -551,8 +644,8 @@ export default function Layout({ children, currentPageName }) {
       url: "/admin/submissions",
       icon: CheckSquare,
     });
-    // Admin Command Center - only show if not impersonating a partner
-    if (!viewingAsPartnerId) {
+    // Admin Command Center - only show if not viewing as partner
+    if (!effectiveViewingAsPartnerId) {
       adminBaseNavItems.push({
         title: "Admin Command Center",
         url: createPageUrl("SuperAdminPanel"),
@@ -569,11 +662,11 @@ export default function Layout({ children, currentPageName }) {
 
   // STRICT: Show partner navigation ONLY if user is a partner
   // Admins/superadmins can view as partner, but that's handled separately
-  const shouldShowPartnerNav = isPartner || (isAdmin && !!viewingAsPartnerId);
+  const shouldShowPartnerNav = isPartner || (isAdmin && !!effectiveViewingAsPartnerId);
   
-  // Pass isAdmin && viewingAsPartnerId as isAdminViewing flag
+  // Pass isAdmin && effectiveViewingAsPartnerId as isAdminViewing flag
   const filteredSections = shouldShowPartnerNav
-    ? filterPartnerNavSections(Array.isArray(allPartnerSections) ? allPartnerSections : [], visibleModules, isAdmin && !!viewingAsPartnerId)
+    ? filterPartnerNavSections(Array.isArray(allPartnerSections) ? allPartnerSections : [], visibleModules, isAdmin && !!effectiveViewingAsPartnerId)
     : [];
 
   // Safely iterate through filtered sections
@@ -603,7 +696,7 @@ export default function Layout({ children, currentPageName }) {
 
   // STRICT: Show Admin nav ONLY if user is admin/superadmin and NOT viewing as partner
   // "View as Partner" button works without changing actual role - it's just a view mode
-  const adminNavItems = (isAdmin && !viewingAsPartnerId) ? adminBaseNavItems : [];
+  const adminNavItems = (isAdmin && !effectiveViewingAsPartnerId) ? adminBaseNavItems : [];
 
   const { logout } = useAuth();
   
@@ -620,12 +713,21 @@ export default function Layout({ children, currentPageName }) {
   };
 
   const handlePartnerSelect = (partnerId) => {
-    // Navigate to Deliverables page when switching to partner view
-    navigate(`/deliverables?viewAs=${encodeURIComponent(partnerId)}`);
+    // Set viewing-as-partner state (does NOT change actual role)
+    setViewingAsPartner(partnerId);
+    // Navigate to partner dashboard when switching to partner view
+    navigate(`/partner/dashboard?viewAs=${encodeURIComponent(partnerId)}`);
   };
 
   const handleStopViewing = () => {
-    navigate(location.pathname);
+    // Clear view-as-partner state
+    clearViewAsPartner();
+    // Navigate back to admin dashboard
+    if (isAdmin) {
+      navigate('/admin/dashboard');
+    } else {
+      navigate(location.pathname.split('?')[0]); // Remove query params
+    }
   };
 
   // In dev mode, skip splash screen
@@ -707,7 +809,7 @@ export default function Layout({ children, currentPageName }) {
             )}
 
             {/* Control Room - Superadmin Only */}
-            {isSuperAdmin && !viewingAsPartnerId && (
+            {isSuperAdmin && !effectiveViewingAsPartnerId && (
               <SidebarGroup>
                 <SidebarGroupLabel>Superadmin</SidebarGroupLabel>
                 <SidebarGroupContent>
@@ -732,37 +834,123 @@ export default function Layout({ children, currentPageName }) {
             {/* This allows viewing partner UI without changing actual role */}
             {isAdmin && (
               <div className="px-4 py-3 border-b border-gray-200/60">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="w-full justify-between hover:bg-orange-50 hover:border-orange-200 transition-all">
+                {effectiveViewingAsPartnerId ? (
+                  // Show "Exit Partner View" button when viewing as partner
+                  <div className="space-y-2">
+                    <div className="p-2 bg-orange-50 border border-orange-200 rounded-lg">
+                      <p className="text-xs font-semibold text-orange-800 mb-1">Viewing as Partner</p>
+                      <p className="text-xs text-orange-700">{viewingAsPartner?.name || 'Partner'}</p>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      className="w-full hover:bg-orange-50 hover:border-orange-200 transition-all"
+                      onClick={handleStopViewing}
+                    >
                       <span className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-orange-600" />
-                        <span className="text-sm font-medium">View as Partner</span>
+                        <X className="w-4 h-4 text-orange-600" />
+                        <span className="text-sm font-medium">Exit Partner View</span>
                       </span>
-                      <ChevronDown className="w-4 h-4 text-gray-500" />
                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-72 max-h-96 overflow-y-auto" align="start">
-                    {Array.isArray(allPartners) && allPartners.length > 0 ? (
-                      allPartners.map((partner) => (
-                        <DropdownMenuItem
-                          key={partner?.id || Math.random()}
-                          onClick={() => handlePartnerSelect(partner?.id)}
-                          className="hover:bg-orange-50 cursor-pointer"
-                        >
-                          <div>
-                            <p className="font-semibold text-gray-900">{partner?.name || 'Unknown Partner'}</p>
-                            <p className="text-xs text-gray-500">{partner?.tier || 'N/A'} • {partner?.contract_status || 'N/A'}</p>
-                          </div>
+                  </div>
+                ) : (
+                  // Show dropdown to select partner
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="w-full justify-between hover:bg-orange-50 hover:border-orange-200 transition-all">
+                        <span className="flex items-center gap-2">
+                          <Users className="w-4 h-4 text-orange-600" />
+                          <span className="text-sm font-medium">
+                            {isSuperAdmin ? 'View as User' : 'View as Partner'}
+                          </span>
+                        </span>
+                        <ChevronDown className="w-4 h-4 text-gray-500" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-72 max-h-96 overflow-y-auto" align="start">
+                      {loadingUsersForDropdown || loadingPartners ? (
+                        <DropdownMenuItem disabled>
+                          <p className="text-sm text-gray-500">Loading...</p>
                         </DropdownMenuItem>
-                      ))
-                    ) : (
-                      <DropdownMenuItem disabled>
-                        <p className="text-sm text-gray-500">No partners available</p>
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      ) : isSuperAdmin ? (
+                        // Superadmin: Show admins + partners
+                        <>
+                          {allUsersForDropdown.filter(u => ['admin', 'superadmin'].includes(u.role)).length > 0 && (
+                            <>
+                              <DropdownMenuLabel>Admins & Superadmins</DropdownMenuLabel>
+                              {allUsersForDropdown
+                                .filter(u => ['admin', 'superadmin'].includes(u.role))
+                                .map((user) => {
+                                  const roleLabel = user.role === 'superadmin' ? 'Super Admin' : 'Admin';
+                                  return (
+                                    <DropdownMenuItem
+                                      key={user.id || user.email}
+                                      onClick={() => {
+                                        // For admin users, navigate to their profile or partner view
+                                        if (user.partner_id) {
+                                          handlePartnerSelect(user.partner_id);
+                                        } else {
+                                          console.log('[Layout] Viewing admin profile:', user);
+                                          // Could navigate to admin profile page if it exists
+                                        }
+                                      }}
+                                      className="hover:bg-orange-50 cursor-pointer"
+                                    >
+                                      <div>
+                                        <p className="font-semibold text-gray-900">{user.full_name || user.email}</p>
+                                        <p className="text-xs text-gray-500">{roleLabel} • {user.email}</p>
+                                      </div>
+                                    </DropdownMenuItem>
+                                  );
+                                })}
+                              <DropdownMenuSeparator />
+                            </>
+                          )}
+                          <DropdownMenuLabel>Partners</DropdownMenuLabel>
+                          {Array.isArray(allPartners) && allPartners.length > 0 ? (
+                            allPartners.map((partner) => (
+                              <DropdownMenuItem
+                                key={partner?.id || Math.random()}
+                                onClick={() => handlePartnerSelect(partner?.id)}
+                                className="hover:bg-orange-50 cursor-pointer"
+                              >
+                                <div>
+                                  <p className="font-semibold text-gray-900">{partner?.name || 'Unknown Partner'}</p>
+                                  <p className="text-xs text-gray-500">{partner?.tier || 'N/A'} • {partner?.contract_status || 'N/A'}</p>
+                                </div>
+                              </DropdownMenuItem>
+                            ))
+                          ) : (
+                            <DropdownMenuItem disabled>
+                              <p className="text-sm text-gray-500">No partners available</p>
+                            </DropdownMenuItem>
+                          )}
+                        </>
+                      ) : (
+                        // Admin: Show only partners (no admins)
+                        <>
+                          {Array.isArray(allPartners) && allPartners.length > 0 ? (
+                            allPartners.map((partner) => (
+                              <DropdownMenuItem
+                                key={partner?.id || Math.random()}
+                                onClick={() => handlePartnerSelect(partner?.id)}
+                                className="hover:bg-orange-50 cursor-pointer"
+                              >
+                                <div>
+                                  <p className="font-semibold text-gray-900">{partner?.name || 'Unknown Partner'}</p>
+                                  <p className="text-xs text-gray-500">{partner?.tier || 'N/A'} • {partner?.contract_status || 'N/A'}</p>
+                                </div>
+                              </DropdownMenuItem>
+                            ))
+                          ) : (
+                            <DropdownMenuItem disabled>
+                              <p className="text-sm text-gray-500">No partners available</p>
+                            </DropdownMenuItem>
+                          )}
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
             )}
 

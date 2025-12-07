@@ -1,6 +1,8 @@
 import React, { useState } from "react";
-// TODO: Base44 removed - migrate to Supabase
-import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
+import { createUserWithAdminAPI } from "@/services/userManagementService";
+import { partnerUsersService } from "@/services/supabaseService";
 import {
   Dialog,
   DialogContent,
@@ -21,14 +23,12 @@ import { Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { config } from "@/config";
+import { supabase } from "@/config/supabase";
 
 const APP_URL = config.appUrl;
 
 export default function CreateAdminDialog({ onClose }) {
-  const { data: currentUser } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me(),
-  });
+  const { user: currentUser } = useAuth();
 
   const [formData, setFormData] = useState({
     email: "",
@@ -39,112 +39,103 @@ export default function CreateAdminDialog({ onClose }) {
 
   const queryClient = useQueryClient();
 
-  const { data: allUsers = [] } = useQuery({
-    queryKey: ['allUsers'],
-    queryFn: () => base44.entities.User.list(),
-  });
-
   const createAdminMutation = useMutation({
     mutationFn: async (data) => {
-      // Check if user exists in backend
-      const existingUser = allUsers.find(u => u.email === data.email);
-      
-      if (!existingUser) {
-        throw new Error(`User with email ${data.email} not found. Please create the user in Backend first (Dashboard → Data → User → Create).`);
-      }
-
       const isSuperAdmin = data.role_type === 'super_admin';
       const fullName = `${data.first_name} ${data.last_name}`.trim();
+      const role = isSuperAdmin ? 'superadmin' : 'admin';
 
-      // Update user to admin role
-      await base44.entities.User.update(existingUser.id, {
-        is_super_admin: isSuperAdmin
-      });
-
-      // Log the activity
-      if (currentUser?.email) {
-        await base44.entities.ActivityLog.create({
-          activity_type: isSuperAdmin ? "admin_promoted" : "user_created",
-          user_email: currentUser.email,
-          target_user_email: existingUser.email,
-          description: `${isSuperAdmin ? 'Super Admin' : 'Admin'} privileges granted: ${fullName} (${existingUser.email})`,
-          metadata: {
-            user_id: existingUser.id,
-            is_super_admin: isSuperAdmin,
-            portal_url: APP_URL
-          }
-        });
+      // Check if user already exists in partner_users
+      const existingPartnerUser = await partnerUsersService.getByEmail(data.email);
+      if (existingPartnerUser) {
+        throw new Error(`User with email ${data.email} already exists. Please update their role instead.`);
       }
 
-      // Send YOUR custom welcome email
-      await base44.integrations.Core.SendEmail({
-        from_name: "SEF Team",
-        to: data.email,
-        subject: "Welcome to SEF Partnership Portal - Admin Access",
-        body: `<html>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <div style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
-    <h1 style="color: white; margin: 0; font-size: 24px;">🛡️ Admin Access Granted</h1>
-    <p style="color: white; margin: 10px 0 0 0; font-size: 14px;">SEF Partnership Portal</p>
-  </div>
-  
-  <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none;">
-    <p style="font-size: 16px; margin-bottom: 20px;">Dear <strong>${fullName}</strong>,</p>
-    
-    <p style="margin-bottom: 20px;">You have been granted <strong style="color: #3b82f6;">${isSuperAdmin ? 'Super Admin' : 'Admin'}</strong> access to the Sharjah Entrepreneurship Festival 2026 Partnership Portal.</p>
-    
-    <div style="background: #eff6ff; border-left: 4px solid #3b82f6; padding: 20px; margin: 25px 0;">
-      <h2 style="color: #3b82f6; margin: 0 0 15px 0; font-size: 18px;">🔐 Your Access Details</h2>
-      <p style="margin: 8px 0;"><strong>Email:</strong> ${data.email}</p>
-      <p style="margin: 8px 0;"><strong>Role:</strong> ${isSuperAdmin ? 'Super Admin' : 'Admin'}</p>
-      <p style="margin: 8px 0;"><strong>Portal:</strong> <a href="${APP_URL}" style="color: #3b82f6; text-decoration: none; font-weight: bold;">${APP_URL}</a></p>
-    </div>
-    
-    <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 20px; margin: 25px 0;">
-      <h2 style="color: #10b981; margin: 0 0 15px 0; font-size: 18px;">🚀 Getting Started</h2>
-      <ol style="margin: 0; padding-left: 20px;">
-        <li style="margin: 8px 0;">Visit: <a href="${APP_URL}" style="color: #10b981; text-decoration: none;">${APP_URL}</a></li>
-        <li style="margin: 8px 0;">Click "Login"</li>
-        <li style="margin: 8px 0;">Enter your email: <strong>${data.email}</strong></li>
-        <li style="margin: 8px 0;">Check your inbox for the secure login link</li>
-        <li style="margin: 8px 0;">Click the link to access your admin dashboard</li>
-      </ol>
-    </div>
-    
-    <div style="background: #fff7ed; border-left: 4px solid #f97316; padding: 20px; margin: 25px 0;">
-      <h2 style="color: #f97316; margin: 0 0 15px 0; font-size: 18px;">📋 Your Responsibilities</h2>
-      <ul style="margin: 0; padding-left: 20px;">
-        <li style="margin: 8px 0;">Review partner submissions and deliverables</li>
-        <li style="margin: 8px 0;">Manage partner accounts and profiles</li>
-        <li style="margin: 8px 0;">Monitor partnership activities and engagement</li>
-        <li style="margin: 8px 0;">Communicate with partners via the portal</li>
-        ${isSuperAdmin ? '<li style="margin: 8px 0;"><strong>Manage other admin users</strong></li>' : ''}
-      </ul>
-    </div>
-    
-    <p style="margin: 25px 0 10px 0;">If you have any questions or need assistance, please contact the SEF Team.</p>
-    
-    <p style="margin: 25px 0 0 0;">Best regards,<br><strong>The SEF Team</strong></p>
-  </div>
-  
-  <div style="background: #f9fafb; padding: 20px; text-align: center; border-radius: 0 0 10px 10px; border: 1px solid #e5e7eb; border-top: none;">
-    <p style="margin: 0; color: #6b7280; font-size: 12px;">Sharjah Entrepreneurship Festival 2026</p>
-    <p style="margin: 5px 0 0 0; color: #f97316; font-weight: bold; font-size: 14px;">"Where We Belong"</p>
-  </div>
-</body>
-</html>`
-      });
+      // Get or create Sheraa partner (for admins)
+      let sheraaPartnerId = null;
+      try {
+        const { data: partners, error: partnerError } = await supabase
+          .from('partners')
+          .select('id')
+          .or('name.ilike.%sheraa%,name.eq.Sheraa')
+          .limit(1)
+          .single();
 
-      return { existingUser, fullName, isSuperAdmin };
+        if (partnerError && partnerError.code !== 'PGRST116') {
+          console.warn('Error fetching Sheraa partner:', partnerError);
+        } else if (partners) {
+          sheraaPartnerId = partners.id;
+        } else {
+          // Create Sheraa partner if it doesn't exist
+          const { data: newPartner, error: createError } = await supabase
+            .from('partners')
+            .insert({
+              name: 'Sheraa',
+              tier: 'Organizer',
+              assigned_account_manager: 'SEF Team',
+              website_url: 'https://sheraa.ae'
+            })
+            .select('id')
+            .single();
+
+          if (createError) {
+            console.warn('Error creating Sheraa partner:', createError);
+          } else {
+            sheraaPartnerId = newPartner.id;
+          }
+        }
+      } catch (error) {
+        console.warn('Error handling Sheraa partner:', error);
+      }
+
+      // Generate a temporary password
+      const tempPassword = 'SEF!' + Math.random().toString(36).slice(-10) + '!';
+
+      try {
+        // Create auth user and partner_user record
+        const result = await createUserWithAdminAPI({
+          email: data.email,
+          password: tempPassword,
+          fullName: fullName,
+          role: role,
+          partnerId: sheraaPartnerId,
+        });
+
+        // Update the partner_user role to match (in case it was set incorrectly)
+        if (result.partnerUser) {
+          await partnerUsersService.update(result.partnerUser.id, {
+            role: role,
+          });
+        }
+
+        return {
+          ...result,
+          fullName,
+          isSuperAdmin,
+        };
+      } catch (error) {
+        console.error('Error creating admin user:', error);
+        // Provide more helpful error message
+        if (error.message?.includes('Service role key')) {
+          throw new Error('Admin user creation requires server configuration. Please contact your system administrator or set up an Edge Function for user creation.');
+        }
+        throw error;
+      }
     },
-    onSuccess: ({ isSuperAdmin }) => {
+    onSuccess: ({ fullName, isSuperAdmin, magicLink }) => {
+      // Invalidate all user-related queries
       queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+      queryClient.invalidateQueries({ queryKey: ['allUsersForDropdown'] });
+      queryClient.invalidateQueries({ queryKey: ['allAdmins'] }); // For AdminOperations dropdown
+      queryClient.invalidateQueries({ queryKey: ['allPartnerUsers'] }); // For AdminPanel
       queryClient.invalidateQueries({ queryKey: ['emailInvitations'] });
-      toast.success(`✅ ${isSuperAdmin ? 'Super Admin' : 'Admin'} privileges granted and custom welcome email sent!`);
+      
+      toast.success(`✅ ${isSuperAdmin ? 'Super Admin' : 'Admin'} created successfully! Welcome email will be sent.`);
       onClose();
     },
     onError: (error) => {
-      toast.error(error.message);
+      console.error('Create admin error:', error);
+      toast.error(error.message || 'Failed to create admin user');
     }
   });
 
@@ -157,7 +148,7 @@ export default function CreateAdminDialog({ onClose }) {
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Grant Admin Access</DialogTitle>
+          <DialogTitle>Create Admin User</DialogTitle>
         </DialogHeader>
 
         <Card className="border-blue-200 bg-blue-50 mb-4">
@@ -165,12 +156,9 @@ export default function CreateAdminDialog({ onClose }) {
             <div className="flex gap-3">
               <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-blue-800">
-                <p className="font-semibold mb-1">📋 Important: 2-Step Process</p>
-                <ol className="list-decimal list-inside space-y-1">
-                  <li>Create user in Backend (Dashboard → Data → User)</li>
-                  <li>Enter their email here to grant admin access</li>
-                </ol>
-                <p className="mt-2 font-medium">✅ Only YOUR custom email will be sent!</p>
+                <p className="font-semibold mb-1">✨ Create Admin Directly</p>
+                <p className="mb-2">Enter the admin's details below. A new account will be created automatically.</p>
+                <p className="font-medium">✅ A welcome email with login instructions will be sent!</p>
                 <p className="mt-2 text-xs text-blue-700">🔗 Portal: <strong>{APP_URL}</strong></p>
               </div>
             </div>
@@ -179,7 +167,7 @@ export default function CreateAdminDialog({ onClose }) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label>Admin Email (must exist in backend) *</Label>
+            <Label>Admin Email *</Label>
             <Input
               type="email"
               value={formData.email}
@@ -188,7 +176,7 @@ export default function CreateAdminDialog({ onClose }) {
               required
             />
             <p className="text-xs text-gray-500 mt-1">
-              User must be created in Backend first
+              A new account will be created for this email
             </p>
           </div>
 
@@ -242,7 +230,7 @@ export default function CreateAdminDialog({ onClose }) {
               {createAdminMutation.isPending && (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               )}
-              Grant Access & Send Email
+              Create Admin & Send Email
             </Button>
           </div>
         </form>

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { partnersService, partnerUsersService } from "@/services/supabaseService";
+import { partnerFeaturesService, DEFAULT_FEATURES, FEATURE_DISPLAY_NAMES } from "@/services/partnerFeaturesService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -19,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import { 
   Save, ArrowLeft, Loader2, Building2, Users, 
-  Mail, Phone, Globe, Image as ImageIcon, CheckSquare 
+  Mail, Phone, Globe, Image as ImageIcon, CheckSquare, ToggleLeft, ToggleRight
 } from "lucide-react";
 import { toast } from "sonner";
 import Breadcrumbs from "@/components/common/Breadcrumbs";
@@ -98,6 +100,7 @@ export default function EditPartner() {
     marketing_contact_email: "",
     marketing_contact_phone: "",
     visible_modules: [],
+    features: {},
     belong_plus_opening_ceremony_allocation: 0,
     belong_plus_sef_vault_allocation: 0,
     belong_plus_closing_ceremony_allocation: 0,
@@ -121,7 +124,7 @@ export default function EditPartner() {
       const allUsers = [];
       for (const p of allPartners) {
         const users = await partnerUsersService.getByPartnerId(p.id);
-        const admins = users.filter(u => u.role === 'admin' || u.role === 'sef_admin');
+        const admins = users.filter(u => u.role === 'admin' || u.role === 'superadmin');
         allUsers.push(...admins);
       }
       return allUsers;
@@ -129,9 +132,32 @@ export default function EditPartner() {
     enabled: isSuperAdmin,
   });
 
+  // Fetch partner features
+  const { data: partnerFeatures = [] } = useQuery({
+    queryKey: ['partnerFeatures', id],
+    queryFn: async () => {
+      if (isNew || !id) return [];
+      return partnerFeaturesService.getByPartnerId(id);
+    },
+    enabled: !isNew && !!id && isSuperAdmin,
+  });
+
   // Update form data when partner loads
   useEffect(() => {
     if (partner) {
+      // Initialize features from partner_features or default to all enabled
+      const featuresMap = {};
+      if (partnerFeatures.length > 0) {
+        partnerFeatures.forEach(f => {
+          featuresMap[f.feature] = f.enabled;
+        });
+      } else {
+        // Default: all features enabled
+        DEFAULT_FEATURES.forEach(f => {
+          featuresMap[f] = true;
+        });
+      }
+
       setFormData({
         name: partner.name || "",
         tier: partner.tier || "",
@@ -155,22 +181,47 @@ export default function EditPartner() {
         belong_plus_opening_ceremony_allocation: partner.belong_plus_opening_ceremony_allocation || 0,
         belong_plus_sef_vault_allocation: partner.belong_plus_sef_vault_allocation || 0,
         belong_plus_closing_ceremony_allocation: partner.belong_plus_closing_ceremony_allocation || 0,
+        features: featuresMap,
       });
+    } else if (isNew) {
+      // For new partners, initialize all features as enabled
+      const featuresMap = {};
+      DEFAULT_FEATURES.forEach(f => {
+        featuresMap[f] = true;
+      });
+      setFormData(prev => ({
+        ...prev,
+        features: featuresMap,
+      }));
     }
-  }, [partner]);
+  }, [partner, partnerFeatures, isNew]);
 
   // Save mutation
   const saveMutation = useMutation({
     mutationFn: async (data) => {
+      const { features, ...partnerData } = data;
+      let savedPartner;
+      
       if (isNew) {
-        return partnersService.create(data);
+        savedPartner = await partnersService.create(partnerData);
+        // Initialize features for new partner (all enabled by default)
+        if (savedPartner?.id && features) {
+          await partnerFeaturesService.bulkUpdate(savedPartner.id, features);
+        }
       } else {
-        return partnersService.update(id, data);
+        savedPartner = await partnersService.update(id, partnerData);
+        // Update features
+        if (id && features) {
+          await partnerFeaturesService.bulkUpdate(id, features);
+        }
       }
+      
+      return savedPartner;
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['adminPartners']);
       queryClient.invalidateQueries(['partner', id]);
+      queryClient.invalidateQueries(['partnerFeatures', id]);
       toast.success(isNew ? "Partner created successfully" : "Partner updated successfully");
       navigate("/admin/partners");
     },
@@ -259,6 +310,7 @@ export default function EditPartner() {
             <TabsTrigger value="basic">Basic Information</TabsTrigger>
             <TabsTrigger value="contacts">POC Contacts</TabsTrigger>
             <TabsTrigger value="belong_plus">BELONG+ Allocations</TabsTrigger>
+            <TabsTrigger value="features">Feature Visibility</TabsTrigger>
             <TabsTrigger value="modules">Module Visibility</TabsTrigger>
           </TabsList>
 
@@ -545,6 +597,81 @@ export default function EditPartner() {
                     />
                     <p className="text-xs text-gray-500">Maximum invites for Closing Ceremony</p>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Feature Visibility Tab - Controls PartnerHub sections */}
+          <TabsContent value="features">
+            <Card>
+              <CardHeader>
+                <CardTitle>PartnerHub Feature Visibility</CardTitle>
+                <p className="text-sm text-gray-600 mt-2">
+                  Control which sections appear in the PartnerHub for this partner. All features are enabled by default for new partners.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {DEFAULT_FEATURES.map((feature) => (
+                    <div key={feature} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                      <div className="flex-1">
+                        <Label htmlFor={`feature-${feature}`} className="text-base font-medium cursor-pointer">
+                          {FEATURE_DISPLAY_NAMES[feature] || feature}
+                        </Label>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {feature === 'Company Profile' && 'Company information and profile details'}
+                          {feature === 'Deliverables' && 'Deliverables submission and tracking'}
+                          {feature === 'Booth Options' && 'Exhibitor stand and booth options'}
+                          {feature === 'VIP Guest List' && 'VIP guest list management'}
+                          {feature === 'Media Uploads' && 'Media assets and press materials'}
+                          {feature === 'Payments' && 'Payment and billing information'}
+                          {feature === 'Legal & Branding' && 'Legal documents and branding guidelines'}
+                          {feature === 'Speaker Requests' && 'Speaker nomination requests'}
+                          {feature === 'Nominations' && 'Startup and award nominations'}
+                        </p>
+                      </div>
+                      <Switch
+                        id={`feature-${feature}`}
+                        checked={formData.features?.[feature] ?? true}
+                        onCheckedChange={async (checked) => {
+                          // Update local state immediately
+                          setFormData(prev => ({
+                            ...prev,
+                            features: {
+                              ...prev.features,
+                              [feature]: checked,
+                            },
+                          }));
+                          
+                          // Update in database instantly (if not new partner)
+                          if (!isNew && id) {
+                            try {
+                              await partnerFeaturesService.updateFeature(id, feature, checked);
+                              queryClient.invalidateQueries(['partnerFeatures', id]);
+                              toast.success(`${FEATURE_DISPLAY_NAMES[feature] || feature} ${checked ? 'enabled' : 'disabled'}`);
+                            } catch (error) {
+                              console.error('Error updating feature:', error);
+                              toast.error('Failed to update feature');
+                              // Revert on error
+                              setFormData(prev => ({
+                                ...prev,
+                                features: {
+                                  ...prev.features,
+                                  [feature]: !checked,
+                                },
+                              }));
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    <strong>Note:</strong> Disabled features will be hidden from the PartnerHub. Partners will see a "Feature not available" message for disabled sections.
+                  </p>
                 </div>
               </CardContent>
             </Card>

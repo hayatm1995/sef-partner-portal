@@ -21,7 +21,8 @@ import {
   UserCircle,
   ArrowRight,
   Upload,
-  TrendingUp
+  TrendingUp,
+  Building2
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
@@ -79,7 +80,42 @@ export default function PartnerDashboard() {
     };
   };
 
-  if (!partnerId) {
+  // Show placeholder content for partner dashboard
+  return (
+    <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-center"
+      >
+        <Card className="border-2 border-orange-200 shadow-xl">
+          <CardContent className="p-12">
+            <div className="w-24 h-24 bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <Building2 className="w-12 h-12 text-white" />
+            </div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">
+              Welcome to the Partner Hub
+            </h1>
+            <p className="text-xl text-gray-600 mb-8">
+              More features will appear soon
+            </p>
+            <div className="flex justify-center gap-4">
+              <Button
+                onClick={() => navigate('/PartnerHub')}
+                className="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700"
+              >
+                Go to Partner Hub
+                <ArrowRight className="ml-2 w-4 h-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+    </div>
+  );
+
+  // Legacy code below - keeping for reference but not rendering
+  if (false && !partnerId) {
     return (
       <div className="p-4 md:p-8 max-w-7xl mx-auto">
         <Card className="border-red-200">
@@ -95,7 +131,7 @@ export default function PartnerDashboard() {
     );
   }
 
-  return (
+  if (false) return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto">
       <motion.div
         initial={{ opacity: 0, y: 20 }}

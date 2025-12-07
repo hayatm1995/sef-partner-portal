@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { AlertCircle, Loader2, Mail, Chrome } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { handleMagicLinkCallback, isMagicLinkCallback } from '@/utils/magicLinkHandler';
+import { handleMagicLinkCallback, isMagicLinkCallback, shouldRedirectToSetPassword } from '@/utils/magicLinkHandler';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -19,7 +19,7 @@ export default function Login() {
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, loginWithMagicLink, loginWithGoogle, loginWithMicrosoft, loginAsTestUser, user, viewMode } = useAuth();
+  const { login, loginWithMagicLink, loginWithGoogle, loginWithMicrosoft, loginAsTestUser, user, role, viewMode } = useAuth();
 
   // Helper function to get redirect URL based on role
   // Updated to use proper dashboard routes: /admin/dashboard and /partner/dashboard
@@ -59,19 +59,8 @@ export default function Login() {
       } else {
         console.log('✅ Login successful! Redirecting based on role...');
         toast.success('Logged in successfully!');
-        // Wait a bit for auth state to update, then redirect based on role
-        setTimeout(() => {
-          // Get redirect URL from location state or determine from role
-          const from = location.state?.from?.pathname;
-          // Only redirect to requested page if user has access (role-based check happens in routing)
-          if (from && from !== '/Login') {
-            console.log('🚀 Redirecting to requested page:', from);
-            navigate(from, { replace: true });
-          } else {
-            // Will redirect in useEffect when user state updates based on role
-            console.log('🚀 Will redirect based on role after auth state updates');
-          }
-        }, 500);
+        // Wait for auth state to update, then redirect based on role
+        // The useEffect below will handle the redirect once role is available
       }
     } catch (error) {
       console.error('❌ Login exception:', error);
@@ -142,14 +131,19 @@ export default function Login() {
   };
 
   // Redirect authenticated users away from login page
+  // Use role from context (more reliable than user.role)
   React.useEffect(() => {
-    if (user && user.role) {
+    if (user && role) {
+      const redirectUrl = getRedirectUrl(role);
+      console.log('[Login] User already authenticated, redirecting to:', redirectUrl, 'role:', role);
+      navigate(redirectUrl, { replace: true });
+    } else if (user && user.role) {
+      // Fallback to user.role if context role not yet available
       const redirectUrl = getRedirectUrl(user.role);
-      console.log('[Login] User already authenticated, redirecting to:', redirectUrl, 'role:', user.role);
+      console.log('[Login] User authenticated (fallback), redirecting to:', redirectUrl, 'role:', user.role);
       navigate(redirectUrl, { replace: true });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, navigate]);
+  }, [user, role, navigate, getRedirectUrl]);
 
   // Handle magic link callback after user clicks invite link
   React.useEffect(() => {
@@ -162,6 +156,13 @@ export default function Login() {
           if (roleInfo.role) {
             console.log('[Login] Magic link processed, role:', roleInfo.role);
             toast.success('Welcome! Setting up your account...');
+            
+            // Check if user needs to set password
+            const needsPassword = await shouldRedirectToSetPassword();
+            if (needsPassword) {
+              navigate('/auth/set-password', { replace: true });
+              return;
+            }
             
             // Wait for auth state to update, then redirect
             setTimeout(() => {

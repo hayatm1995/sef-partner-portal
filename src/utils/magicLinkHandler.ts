@@ -78,10 +78,47 @@ export async function handleMagicLinkCallback(): Promise<{ role: string | null; 
       }
     }
     
+    // Check if user needs to set password
+    // Note: We can't directly check if password is set, but we can check if this is first login
+    // For now, we'll let the SetPassword page handle the redirect logic
+    
     return roleInfo;
   } catch (error) {
     console.error('[handleMagicLinkCallback] Error:', error);
     return { role: null, partner_id: null };
+  }
+}
+
+/**
+ * Check if user needs to set password
+ * This is called after magic link login to determine if redirect to /auth/set-password is needed
+ * 
+ * @returns {Promise<boolean>} True if user should be redirected to set password
+ */
+export async function shouldRedirectToSetPassword(): Promise<boolean> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+    
+    // Check if user has encrypted_password set (indicates password exists)
+    // Note: This is not directly accessible, so we'll use a different approach
+    // We can check user metadata or rely on the fact that magic link users typically don't have passwords
+    
+    // For now, we'll check if this is a new user (created via magic link invite)
+    // New users from invites typically don't have passwords set
+    const isNewUser = user.created_at && 
+      new Date(user.created_at).getTime() > Date.now() - 24 * 60 * 60 * 1000; // Created in last 24 hours
+    
+    // If user was created recently and has no password hint in metadata, redirect to set password
+    // This is a heuristic - in production, you might want to track this in a database field
+    if (isNewUser && !user.user_metadata?.password_set) {
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('[shouldRedirectToSetPassword] Error:', error);
+    return false;
   }
 }
 

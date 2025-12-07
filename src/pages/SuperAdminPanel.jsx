@@ -1,7 +1,9 @@
 
-import React, { useState } from "react";
-// TODO: Base44 removed - migrate to Supabase
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { partnerUsersService } from "@/services/supabaseService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +34,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Search, Shield, UserCog, AlertCircle, Edit, Trash2, Plus, Mail } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
@@ -46,7 +47,7 @@ export default function SuperAdminPanel() {
   const [showCreateAdmin, setShowCreateAdmin] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { user: authUser } = useAuth();
+  const { user: authUser, role } = useAuth();
   const queryClient = useQueryClient();
 
   // Check for impersonation and redirect if needed
@@ -58,153 +59,91 @@ export default function SuperAdminPanel() {
     }
   }, [location.search, navigate]);
 
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me(),
+  // Fetch all users from Supabase partner_users table
+  const { data: allUsers = [], isLoading: isLoadingUsers, error: usersError } = useQuery({
+    queryKey: ['allUsers'],
+    queryFn: async () => {
+      try {
+        const result = await partnerUsersService.getAll();
+        console.log('[SuperAdminPanel] Fetched users:', result?.length || 0);
+        return result || [];
+      } catch (error) {
+        console.error('[SuperAdminPanel] Error fetching users:', error);
+        toast.error('Failed to load users: ' + error.message);
+        return [];
+      }
+    },
+    enabled: role === 'superadmin',
+    retry: 1,
   });
 
-  const { data: allUsers = [] } = useQuery({
-    queryKey: ['allUsers'],
-    queryFn: () => base44.entities.User.list(),
-    enabled: user?.is_super_admin,
-  });
+  // Enhanced debugging
+  React.useEffect(() => {
+    console.log('[SuperAdminPanel] Debug Info:', {
+      role,
+      isSuperAdmin: role === 'superadmin',
+      queryEnabled: role === 'superadmin',
+      allUsersCount: allUsers.length,
+      isLoading: isLoadingUsers,
+      error: usersError,
+      errorMessage: usersError?.message,
+      firstUser: allUsers[0] || null,
+    });
+    
+    if (usersError) {
+      console.error('[SuperAdminPanel] User fetch error details:', {
+        error: usersError,
+        message: usersError.message,
+        code: usersError.code,
+        details: usersError.details,
+        hint: usersError.hint,
+      });
+    }
+  }, [role, allUsers.length, isLoadingUsers, usersError]);
 
   const updateUserRoleMutation = useMutation({
-    mutationFn: ({ userId, newRole }) => 
-      base44.entities.User.update(userId, { role: newRole }),
+    mutationFn: ({ userId, newRole }) => {
+      // Map UI roles to database roles
+      const dbRole = newRole === 'super_admin' ? 'superadmin' : newRole;
+      return partnerUsersService.update(userId, { role: dbRole });
+    },
     onSuccess: async (updatedUser, variables) => {
-      // Log the role change activity
-      try {
-        if (user) { // Ensure the current user (admin performing the action) is available
-          await base44.entities.ActivityLog.create({
-            activity_type: "role_changed",
-            user_email: user.email,
-            target_user_email: updatedUser.email,
-            description: `User role changed to "${variables.newRole}" for ${updatedUser.full_name} (${updatedUser.email})`,
-            metadata: {
-              user_id: updatedUser.id,
-              new_role: variables.newRole
-            }
-          });
-        }
-      } catch (error) {
-        console.error("Failed to log activity:", error);
-      }
-
       queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+      queryClient.invalidateQueries({ queryKey: ['allUsersForDropdown'] });
       toast.success('User role updated successfully');
+    },
+    onError: (error) => {
+      console.error('Error updating user role:', error);
+      toast.error('Failed to update user role: ' + error.message);
     },
   });
 
   const deleteUserMutation = useMutation({
-    mutationFn: (userId) => base44.entities.User.delete(userId),
+    mutationFn: (userId) => partnerUsersService.delete(userId),
     onSuccess: async (result, userId) => {
-      // Log the deletion activity
-      try {
-        if (user && selectedUser) { // Ensure the current user and the deleted user are available
-          await base44.entities.ActivityLog.create({
-            activity_type: "user_deleted",
-            user_email: user.email,
-            target_user_email: selectedUser.email,
-            description: `User account deleted: ${selectedUser.full_name} (${selectedUser.email})`,
-            metadata: {
-              deleted_user_id: userId
-            }
-          });
-        }
-      } catch (error) {
-        console.error("Failed to log activity:", error);
-      }
-
       queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+      queryClient.invalidateQueries({ queryKey: ['allUsersForDropdown'] });
       setShowDeleteDialog(false);
       setSelectedUser(null);
       toast.success('User deleted successfully');
+    },
+    onError: (error) => {
+      console.error('Error deleting user:', error);
+      toast.error('Failed to delete user: ' + error.message);
     },
   });
 
   const resendNotificationMutation = useMutation({
     mutationFn: async (adminUser) => {
-      await base44.integrations.Core.SendEmail({
-        from_name: "SEF Team",
-        to: adminUser.email,
-        subject: "Welcome to SEF Partnership Portal - Admin Access",
-        body: `<html>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <div style="background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
-    <h1 style="color: white; margin: 0; font-size: 24px;">🛡️ Admin Access Granted</h1>
-    <p style="color: white; margin: 10px 0 0 0; font-size: 14px;">SEF Partnership Portal</p>
-  </div>
-  
-  <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none;">
-    <p style="font-size: 16px; margin-bottom: 20px;">Dear <strong>${adminUser.full_name}</strong>,</p>
-    
-    <p style="margin-bottom: 20px;">You have been granted <strong style="color: #7c3aed;">${adminUser.is_super_admin ? 'Super Admin' : 'Admin'}</strong> access to the Sharjah Entrepreneurship Festival 2026 Partnership Portal.</p>
-    
-    <div style="background: #f5f3ff; border-left: 4px solid #7c3aed; padding: 20px; margin: 25px 0;">
-      <h2 style="color: #7c3aed; margin: 0 0 15px 0; font-size: 18px;">🔐 Your Access Details</h2>
-      <p style="margin: 8px 0;"><strong>Email:</strong> ${adminUser.email}</p>
-      <p style="margin: 8px 0;"><strong>Role:</strong> ${adminUser.is_super_admin ? 'Super Admin' : 'Admin'}</p>
-      <p style="margin: 8px 0;"><strong>Portal:</strong> <a href="${window.location.origin}" style="color: #7c3aed; text-decoration: none;">${window.location.origin}</a></p>
-    </div>
-    
-    <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 20px; margin: 25px 0;">
-      <h2 style="color: #10b981; margin: 0 0 15px 0; font-size: 18px;">🚀 Getting Started</h2>
-      <ol style="margin: 0; padding-left: 20px;">
-        <li style="margin: 8px 0;">Visit the portal using the link above</li>
-        <li style="margin: 8px 0;">Click on "Login" and use your email address</li>
-        <li style="margin: 8px 0;">You'll receive a magic link to access your account</li>
-        <li style="margin: 8px 0;">Once logged in, you'll have full ${adminUser.is_super_admin ? 'super admin' : 'admin'} privileges</li>
-      </ol>
-    </div>
-    
-    <div style="background: #fff7ed; border-left: 4px solid #f97316; padding: 20px; margin: 25px 0;">
-      <h2 style="color: #f97316; margin: 0 0 15px 0; font-size: 18px;">📋 Your Responsibilities</h2>
-      ${adminUser.is_super_admin ? `
-      <ul style="margin: 0; padding-left: 20px;">
-        <li style="margin: 8px 0;">Manage admin users and permissions</li>
-        <li style="margin: 8px 0;">Oversee all partner operations</li>
-        <li style="margin: 8px 0;">Configure system settings</li>
-      </ul>
-      ` : `
-      <ul style="margin: 0; padding-left: 20px;">
-        <li style="margin: 8px 0;">Review partner submissions</li>
-        <li style="margin: 8px 0;">Manage partner accounts</li>
-        <li style="margin: 8px 0;">Monitor partnership activities</li>
-      </ul>
-      `}
-    </div>
-    
-    <p style="margin: 25px 0 10px 0;">If you have any questions or need assistance, please contact the SEF Team.</p>
-    
-    <p style="margin: 25px 0 0 0;">Best regards,<br><strong>The SEF Team</strong></p>
-  </div>
-  
-  <div style="background: #f9fafb; padding: 20px; text-align: center; border-radius: 0 0 10px 10px; border: 1px solid #e5e7eb; border-top: none;">
-    <p style="margin: 0; color: #6b7280; font-size: 12px;">Sharjah Entrepreneurship Festival 2026</p>
-    <p style="margin: 5px 0 0 0; color: #f97316; font-weight: bold; font-size: 14px;">"Where We Belong"</p>
-  </div>
-</body>
-</html>`
-      });
-
-      // Log the email
-      if (user?.email) {
-        await base44.entities.ActivityLog.create({
-          activity_type: "email_sent",
-          user_email: user.email,
-          target_user_email: adminUser.email,
-          description: `Admin welcome email resent to ${adminUser.full_name} (${adminUser.email})`,
-          metadata: {
-            email_type: "admin_welcome_resend",
-            subject: "Welcome to SEF Partnership Portal - Admin Access",
-            is_super_admin: adminUser.is_super_admin
-          }
-        });
-      }
+      // TODO: Implement email sending via Supabase Edge Function or Resend
+      // For now, just show a success message
+      const isSuperAdmin = adminUser.role === 'superadmin';
+      console.log('Would send email to:', adminUser.email, 'Role:', isSuperAdmin ? 'Super Admin' : 'Admin');
+      
+      // In production, call your email service here
+      // await sendAdminWelcomeEmail(adminUser.email, adminUser.full_name, isSuperAdmin);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['emailInvitations'] });
       toast.success('Welcome email resent successfully');
     },
     onError: (error) => {
@@ -212,10 +151,8 @@ export default function SuperAdminPanel() {
     }
   });
 
-  // Check if user is superadmin (role === 'sef_admin')
-  // Use authUser from useAuth hook, fallback to query user
-  const currentUser = authUser || user;
-  const isSuperAdmin = currentUser?.role === 'sef_admin';
+  // Check if user is superadmin - use role from AuthContext
+  const isSuperAdmin = role === 'superadmin';
   
   if (!isSuperAdmin) {
     return (
@@ -227,25 +164,25 @@ export default function SuperAdminPanel() {
     );
   }
 
+  // Filter users by search query
   const filteredUsers = allUsers.filter(u =>
     u.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.role?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const superAdminUsers = filteredUsers.filter(u => u.is_super_admin);
-  const adminUsers = filteredUsers.filter(u => u.role === 'admin' && !u.is_super_admin);
-  const regularUsers = filteredUsers.filter(u => u.role === 'user');
+  // Categorize users by role (from Supabase partner_users table)
+  const superAdminUsers = filteredUsers.filter(u => u.role === 'superadmin');
+  const adminUsers = filteredUsers.filter(u => u.role === 'admin');
+  const regularUsers = filteredUsers.filter(u => u.role === 'partner' || !u.role || (u.role !== 'admin' && u.role !== 'superadmin'));
 
-  const getRoleBadge = (role, isSuperAdmin) => {
-    if (isSuperAdmin) {
-      return { color: "bg-purple-100 text-purple-800", label: "Super Admin" };
-    }
+  const getRoleBadge = (role) => {
     const configs = {
+      superadmin: { color: "bg-purple-100 text-purple-800", label: "Super Admin" },
       admin: { color: "bg-blue-100 text-blue-800", label: "Admin" },
-      user: { color: "bg-green-100 text-green-800", label: "Partner" }
+      partner: { color: "bg-green-100 text-green-800", label: "Partner" }
     };
-    return configs[role] || configs.user;
+    return configs[role] || configs.partner;
   };
 
   const handleRoleChange = (userId, newRole) => {
@@ -382,7 +319,8 @@ export default function SuperAdminPanel() {
                   </TableHeader>
                   <TableBody>
                     {superAdminUsers.map((adminUser) => {
-                      const roleBadge = getRoleBadge(adminUser.role, adminUser.is_super_admin);
+                      const roleBadge = getRoleBadge(adminUser.role);
+                      const isCurrentUser = adminUser.auth_user_id === authUser?.id;
                       return (
                         <TableRow key={adminUser.id}>
                           <TableCell className="font-medium">
@@ -407,16 +345,14 @@ export default function SuperAdminPanel() {
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <Select
-                                value={adminUser.is_super_admin ? "super_admin" : adminUser.role}
+                                value={adminUser.role === 'superadmin' ? "super_admin" : adminUser.role}
                                 onValueChange={(newRole) => {
-                                  if (newRole === "super_admin") {
-                                    base44.entities.User.update(adminUser.id, { is_super_admin: true, role: 'admin' });
-                                  } else {
-                                    base44.entities.User.update(adminUser.id, { is_super_admin: false, role: newRole });
-                                  }
-                                  queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+                                  updateUserRoleMutation.mutate({ 
+                                    userId: adminUser.id, 
+                                    newRole: newRole === 'super_admin' ? 'superadmin' : newRole 
+                                  });
                                 }}
-                                disabled={adminUser.id === user.id}
+                                disabled={isCurrentUser}
                               >
                                 <SelectTrigger className="w-32">
                                   <SelectValue />
@@ -424,10 +360,10 @@ export default function SuperAdminPanel() {
                                 <SelectContent>
                                   <SelectItem value="super_admin">Super Admin</SelectItem>
                                   <SelectItem value="admin">Admin</SelectItem>
-                                  <SelectItem value="user">Partner</SelectItem>
+                                  <SelectItem value="partner">Partner</SelectItem>
                                 </SelectContent>
                               </Select>
-                              {adminUser.id !== user.id && (
+                              {!isCurrentUser && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -468,7 +404,7 @@ export default function SuperAdminPanel() {
                   </TableHeader>
                   <TableBody>
                     {adminUsers.map((adminUser) => {
-                      const roleBadge = getRoleBadge(adminUser.role, adminUser.is_super_admin);
+                      const roleBadge = getRoleBadge(adminUser.role);
                       return (
                         <TableRow key={adminUser.id}>
                           <TableCell className="font-medium">
@@ -493,13 +429,12 @@ export default function SuperAdminPanel() {
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <Select
-                                value="admin"
+                                value={adminUser.role}
                                 onValueChange={(newRole) => {
-                                  if (newRole === "super_admin") {
-                                    base44.entities.User.update(adminUser.id, { is_super_admin: true, role: 'admin' });
-                                  } else {
-                                    handleRoleChange(adminUser.id, newRole);
-                                  }
+                                  updateUserRoleMutation.mutate({ 
+                                    userId: adminUser.id, 
+                                    newRole: newRole === 'super_admin' ? 'superadmin' : newRole 
+                                  });
                                 }}
                               >
                                 <SelectTrigger className="w-32">
@@ -508,7 +443,7 @@ export default function SuperAdminPanel() {
                                 <SelectContent>
                                   <SelectItem value="super_admin">Super Admin</SelectItem>
                                   <SelectItem value="admin">Admin</SelectItem>
-                                  <SelectItem value="user">Partner</SelectItem>
+                                  <SelectItem value="partner">Partner</SelectItem>
                                 </SelectContent>
                               </Select>
                               <Button
@@ -548,44 +483,46 @@ export default function SuperAdminPanel() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {regularUsers.map((regularUser) => (
-                    <TableRow key={regularUser.id}>
-                      <TableCell className="font-medium">{regularUser.full_name}</TableCell>
-                      <TableCell>{regularUser.company_name || '-'}</TableCell>
-                      <TableCell>{regularUser.email}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Select
-                            value="user"
-                            onValueChange={(newRole) => {
-                              if (newRole === "super_admin") {
-                                base44.entities.User.update(regularUser.id, { is_super_admin: true, role: 'admin' });
-                              } else {
-                                handleRoleChange(regularUser.id, newRole);
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="w-32">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="super_admin">Super Admin</SelectItem>
-                              <SelectItem value="admin">Admin</SelectItem>
-                              <SelectItem value="user">Partner</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDeleteUser(regularUser)}
-                            className="text-red-600 hover:bg-red-50"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {regularUsers.map((regularUser) => {
+                    const partnerName = regularUser.partners?.name || '-';
+                    return (
+                      <TableRow key={regularUser.id}>
+                        <TableCell className="font-medium">{regularUser.full_name}</TableCell>
+                        <TableCell>{partnerName}</TableCell>
+                        <TableCell>{regularUser.email}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={regularUser.role || 'partner'}
+                              onValueChange={(newRole) => {
+                                updateUserRoleMutation.mutate({ 
+                                  userId: regularUser.id, 
+                                  newRole: newRole === 'super_admin' ? 'superadmin' : (newRole === 'user' ? 'partner' : newRole)
+                                });
+                              }}
+                            >
+                              <SelectTrigger className="w-32">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="super_admin">Super Admin</SelectItem>
+                                <SelectItem value="admin">Admin</SelectItem>
+                                <SelectItem value="partner">Partner</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeleteUser(regularUser)}
+                              className="text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

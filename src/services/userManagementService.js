@@ -1,4 +1,3 @@
-import { supabase } from '@/config/supabase';
 import { nanoid } from 'nanoid';
 
 /**
@@ -59,14 +58,17 @@ export async function createUserWithAdminAPI(userData) {
     if (!authUser?.user) throw new Error('Failed to create auth user');
 
     // 2. Insert into partner_users table
-    const { data: partnerUser, error: partnerUserError } = await supabase
+    // Map role: 'superadmin' -> 'superadmin', 'admin' -> 'admin', others -> 'partner'
+    const dbRole = role === 'superadmin' ? 'superadmin' : (role === 'admin' ? 'admin' : 'partner');
+    // Use admin client for inserting (has proper permissions)
+    const { data: partnerUser, error: partnerUserError } = await supabaseAdmin
       .from('partner_users')
       .insert({
         auth_user_id: authUser.user.id,
         partner_id: partnerId || null,
         email,
         full_name: fullName,
-        role: role === 'admin' ? 'admin' : 'viewer', // Map to user_role enum
+        role: dbRole,
       })
       .select()
       .single();

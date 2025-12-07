@@ -160,6 +160,35 @@ export const partnerUsersService = {
     
     if (error) throw error;
   },
+
+  // Get all users (for admin/superadmin views)
+  getAll: async () => {
+    const { data, error } = await supabase
+      .from('partner_users')
+      .select(`
+        *,
+        partners (*)
+      `)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data || [];
+  },
+
+  // Get users by role
+  getByRole: async (role) => {
+    const { data, error } = await supabase
+      .from('partner_users')
+      .select(`
+        *,
+        partners (*)
+      `)
+      .eq('role', role)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data || [];
+  },
 };
 
 // ============================================
@@ -351,10 +380,7 @@ export const nominationsService = {
   getAll: async (partnerId = null) => {
     let query = supabase
       .from('nominations')
-      .select(`
-        *,
-        partners (*)
-      `)
+      .select('*')
       .order('created_at', { ascending: false });
 
     if (partnerId) {
@@ -362,8 +388,11 @@ export const nominationsService = {
     }
 
     const { data, error } = await query;
-    if (error) throw error;
-    return data;
+    if (error) {
+      console.error('[nominationsService] Error fetching nominations:', error);
+      throw error;
+    }
+    return data || [];
   },
 
   // Get nomination by ID
@@ -1255,6 +1284,118 @@ export const contractDiscussionsService = {
     return () => {
       supabase.removeChannel(channel);
     };
+  },
+};
+
+// ============================================
+// PARTNER FEATURES
+// ============================================
+
+export const partnerFeaturesService = {
+  // Get all enabled features for a partner
+  getEnabledFeatures: async (partnerId) => {
+    const { data, error } = await supabase
+      .from('partner_features')
+      .select('feature')
+      .eq('partner_id', partnerId)
+      .eq('enabled', true);
+    
+    if (error) throw error;
+    return data.map(item => item.feature);
+  },
+
+  // Get all features (enabled and disabled) for a partner
+  getAllFeatures: async (partnerId) => {
+    const { data, error } = await supabase
+      .from('partner_features')
+      .select('*')
+      .eq('partner_id', partnerId)
+      .order('feature');
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Check if a specific feature is enabled for a partner
+  isFeatureEnabled: async (partnerId, feature) => {
+    const { data, error } = await supabase
+      .from('partner_features')
+      .select('enabled')
+      .eq('partner_id', partnerId)
+      .eq('feature', feature)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') throw error;
+    return data?.enabled ?? true; // Default to enabled if not found
+  },
+
+  // Update feature status (enable/disable)
+  updateFeature: async (partnerId, feature, enabled) => {
+    const { data, error } = await supabase
+      .from('partner_features')
+      .upsert({
+        partner_id: partnerId,
+        feature: feature,
+        enabled: enabled,
+      }, {
+        onConflict: 'partner_id,feature'
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Update multiple features at once
+  updateFeatures: async (partnerId, features) => {
+    // features should be an array of { feature, enabled }
+    const updates = features.map(f => ({
+      partner_id: partnerId,
+      feature: f.feature,
+      enabled: f.enabled,
+    }));
+
+    const { data, error } = await supabase
+      .from('partner_features')
+      .upsert(updates, {
+        onConflict: 'partner_id,feature'
+      })
+      .select();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Initialize default features for a partner (all enabled)
+  initializeDefaultFeatures: async (partnerId) => {
+    const defaultFeatures = [
+      'Company Profile',
+      'Deliverables',
+      'Booth Options',
+      'VIP Guest List',
+      'Media Uploads',
+      'Payments',
+      'Legal & Branding',
+      'Speaker Requests',
+      'Nominations'
+    ];
+
+    const features = defaultFeatures.map(feature => ({
+      partner_id: partnerId,
+      feature: feature,
+      enabled: true,
+    }));
+
+    const { data, error } = await supabase
+      .from('partner_features')
+      .upsert(features, {
+        onConflict: 'partner_id,feature'
+      })
+      .select();
+    
+    if (error) throw error;
+    return data;
   },
 };
 

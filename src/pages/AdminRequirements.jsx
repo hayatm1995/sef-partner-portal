@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 // TODO: Base44 removed - migrate to Supabase
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,16 +36,13 @@ export default function AdminRequirements() {
   const [editingRequirement, setEditingRequirement] = useState(null);
   
   const queryClient = useQueryClient();
-
-  const { data: user } = useQuery({
-    queryKey: ['currentUser'],
-    queryFn: () => base44.auth.me(),
-  });
+  const { role } = useAuth();
+  const isAdmin = role === 'admin' || role === 'superadmin';
 
   const { data: requirements = [] } = useQuery({
     queryKey: ['requirements'],
     queryFn: () => base44.entities.PartnerRequirement.list('-display_order'),
-    enabled: user?.role === 'admin',
+    enabled: isAdmin,
   });
 
   const { data: allPartners = [] } = useQuery({
@@ -53,7 +51,7 @@ export default function AdminRequirements() {
       const users = await base44.entities.User.list();
       return users.filter(u => u.role !== 'admin');
     },
-    enabled: user?.role === 'admin',
+    enabled: isAdmin,
   });
 
   const deleteMutation = useMutation({
@@ -94,7 +92,7 @@ export default function AdminRequirements() {
     },
   });
 
-  if (user?.role !== 'admin') {
+  if (!isAdmin) {
     return (
       <div className="p-8 text-center">
         <AlertCircle className="w-16 h-16 mx-auto text-red-500 mb-4" />

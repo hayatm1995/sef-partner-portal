@@ -10,6 +10,8 @@ export const AuthProvider = ({ children }) => {
   const [role, setRole] = useState(null);
   const [partnerId, setPartnerId] = useState(null);
   const [loading, setLoading] = useState(true);
+  // View-as-partner state (does NOT overwrite primary role)
+  const [viewingAsPartnerId, setViewingAsPartnerId] = useState(null);
 
   /**
    * Sync user role and partner_id to app_metadata after login
@@ -49,8 +51,21 @@ export const AuthProvider = ({ children }) => {
         const { data } = await supabase.auth.getSession();
         setSession(data.session);
         if (data.session?.user) {
+          console.log('[AuthContext] Initializing auth for user:', {
+            id: data.session.user.id,
+            email: data.session.user.email
+          });
+          
           // Use getUserRole helper that checks both metadata and database
           const roleInfo = await getUserRole(data.session.user);
+          
+          console.log('[AuthContext] Resolved role info:', {
+            role: roleInfo.role,
+            partner_id: roleInfo.partner_id,
+            user_id: data.session.user.id,
+            email: data.session.user.email
+          });
+          
           setRole(roleInfo.role);
           setPartnerId(roleInfo.partner_id);
           
@@ -58,11 +73,12 @@ export const AuthProvider = ({ children }) => {
           // Don't block on this, just log if mismatch
           syncUserMetadata(data.session.user).catch(console.error);
         } else {
+          console.log('[AuthContext] No session found');
           setRole(null);
           setPartnerId(null);
         }
       } catch (error) {
-        console.error('Error initializing auth:', error);
+        console.error('[AuthContext] Error initializing auth:', error);
       } finally {
         setLoading(false);
       }
@@ -73,10 +89,25 @@ export const AuthProvider = ({ children }) => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[AuthContext] Auth state changed:', event);
       setSession(session);
       if (session?.user) {
+        console.log('[AuthContext] Processing auth state change for user:', {
+          id: session.user.id,
+          email: session.user.email,
+          event
+        });
+        
         // Use getUserRole helper that checks both metadata and database
         const roleInfo = await getUserRole(session.user);
+        
+        console.log('[AuthContext] Resolved role info from state change:', {
+          role: roleInfo.role,
+          partner_id: roleInfo.partner_id,
+          user_id: session.user.id,
+          email: session.user.email
+        });
+        
         setRole(roleInfo.role);
         setPartnerId(roleInfo.partner_id);
         
@@ -85,6 +116,7 @@ export const AuthProvider = ({ children }) => {
           syncUserMetadata(session.user).catch(console.error);
         }
       } else {
+        console.log('[AuthContext] No user in session, clearing role');
         setRole(null);
         setPartnerId(null);
       }
@@ -184,9 +216,28 @@ export const AuthProvider = ({ children }) => {
     setSession(null);
     setRole(null);
     setPartnerId(null);
+    setViewingAsPartnerId(null); // Clear view-as-partner state on logout
     // Clear all storage
     localStorage.clear();
     sessionStorage.clear();
+  };
+
+  /**
+   * Set viewing-as-partner mode
+   * This does NOT change the actual role - it's just a view mode
+   * @param {string | null} partnerId - Partner ID to view as, or null to exit
+   */
+  const setViewingAsPartner = (partnerId) => {
+    console.log('[AuthContext] Setting view-as-partner:', partnerId);
+    setViewingAsPartnerId(partnerId);
+  };
+
+  /**
+   * Clear viewing-as-partner mode
+   */
+  const clearViewAsPartner = () => {
+    console.log('[AuthContext] Clearing view-as-partner');
+    setViewingAsPartnerId(null);
   };
 
   // Create enriched user object with all expected properties - memoized to update when session/role/partnerId changes
@@ -229,6 +280,10 @@ export const AuthProvider = ({ children }) => {
     loginWithGoogle,
     loginWithMicrosoft,
     loginAsTestUser,
+    // View-as-partner functionality (does not change actual role)
+    viewingAsPartnerId,
+    setViewingAsPartner,
+    clearViewAsPartner,
     // Legacy compatibility
     partner: null,
     partnerUser: null,
