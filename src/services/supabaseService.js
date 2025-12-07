@@ -414,8 +414,8 @@ export const nominationsService = {
   // Automatically adds partner_id, created_by, and status for RLS compliance
   create: async (nominationData) => {
     // Get current auth user
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (!authUser) {
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+    if (authError || !authUser) {
       throw new Error('User must be authenticated to create nominations');
     }
 
@@ -434,13 +434,19 @@ export const nominationsService = {
     const nominationWithRequiredFields = {
       ...nominationData,
       partner_id: nominationData.partner_id || partnerUser.partner_id,
-      created_by: nominationData.created_by || authUser.id,
       status: nominationData.status || 'pending',
     };
 
-    // If status is 'pending', map to 'Submitted' (as per schema)
+    // If status is 'pending', map to 'Submitted' (as per schema CHECK constraint)
     if (nominationWithRequiredFields.status === 'pending') {
       nominationWithRequiredFields.status = 'Submitted';
+    }
+
+    // Add created_by if the column exists (check by trying to insert it, will be ignored if column doesn't exist)
+    // Note: If created_by column doesn't exist in table, this will be silently ignored by Supabase
+    // If RLS requires it, we'll get an error and can add the column via migration
+    if (nominationData.created_by === undefined) {
+      nominationWithRequiredFields.created_by = authUser.id;
     }
 
     const { data, error } = await supabase
@@ -449,7 +455,25 @@ export const nominationsService = {
       .select()
       .single();
     
-    if (error) throw error;
+    if (error) {
+      // If error is about missing created_by column, log it but don't fail
+      if (error.message && error.message.includes('created_by')) {
+        console.warn('[nominationsService] created_by column may not exist. Error:', error);
+        // Retry without created_by
+        const { data: retryData, error: retryError } = await supabase
+          .from('nominations')
+          .insert({
+            ...nominationWithRequiredFields,
+            created_by: undefined
+          })
+          .select()
+          .single();
+        
+        if (retryError) throw retryError;
+        return retryData;
+      }
+      throw error;
+    }
     return data;
   },
 
