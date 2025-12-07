@@ -998,6 +998,25 @@ export const partnerMessagesService = {
 
   // Create message
   create: async (messageData) => {
+    // Ensure sender_role is set if not provided
+    if (!messageData.sender_role) {
+      // Try to determine from current user context
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: partnerUser } = await supabase
+          .from('partner_users')
+          .select('role')
+          .eq('auth_user_id', user.id)
+          .single();
+        
+        if (partnerUser?.role && ['admin', 'sef_admin', 'superadmin'].includes(partnerUser.role)) {
+          messageData.sender_role = 'admin';
+        } else {
+          messageData.sender_role = 'partner';
+        }
+      }
+    }
+    
     const { data, error } = await supabase
       .from('partner_messages')
       .insert(messageData)
@@ -1009,6 +1028,21 @@ export const partnerMessagesService = {
     
     if (error) throw error;
     return data;
+  },
+  
+  // Get messages by deliverable_id
+  getByDeliverableId: async (deliverableId) => {
+    const { data, error } = await supabase
+      .from('partner_messages')
+      .select(`
+        *,
+        sender:auth.users!sender_id(id, email)
+      `)
+      .eq('deliverable_id', deliverableId)
+      .order('created_at', { ascending: true });
+    
+    if (error) throw error;
+    return data || [];
   },
 
   // Mark messages as read

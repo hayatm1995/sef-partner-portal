@@ -26,6 +26,7 @@ import {
 import { toast } from "sonner";
 import Breadcrumbs from "@/components/common/Breadcrumbs";
 import DeliverablesManagement from "@/components/admin/DeliverablesManagement";
+import PartnerMessages from "@/components/messaging/PartnerMessages";
 
 // All available portal modules
 const ALL_MODULES = [
@@ -317,6 +318,7 @@ export default function EditPartner() {
             <TabsTrigger value="branding">Branding</TabsTrigger>
             <TabsTrigger value="nominations">Nominations</TabsTrigger>
             <TabsTrigger value="notes">Notes</TabsTrigger>
+            <TabsTrigger value="messages">Messages</TabsTrigger>
             <TabsTrigger value="belong_plus">BELONG+ Allocations</TabsTrigger>
             <TabsTrigger value="features">Feature Visibility</TabsTrigger>
             <TabsTrigger value="modules">Module Visibility</TabsTrigger>

@@ -30,13 +30,22 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, FileText, Calendar, Trash2, Edit, CheckCircle, Clock, XCircle } from "lucide-react";
+import { Plus, FileText, Calendar, Trash2, Edit, CheckCircle, Clock, XCircle, MessageSquare } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import PartnerMessages from "@/components/messaging/PartnerMessages";
 
 export default function DeliverablesManagement({ partnerId }) {
   const queryClient = useQueryClient();
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [discussingDeliverable, setDiscussingDeliverable] = useState(null);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -202,6 +211,14 @@ export default function DeliverablesManagement({ partnerId }) {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => setDiscussingDeliverable(deliverable)}
+                          title="Discuss this deliverable"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => window.open(`/admin/deliverables-review?partnerId=${partnerId}&deliverableId=${deliverable.id}`, '_blank')}
                         >
                           <FileText className="w-4 h-4" />
@@ -296,6 +313,29 @@ export default function DeliverablesManagement({ partnerId }) {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Deliverable Discussion Drawer */}
+      <Sheet open={!!discussingDeliverable} onOpenChange={(open) => !open && setDiscussingDeliverable(null)}>
+        <SheetContent className="w-full sm:max-w-2xl">
+          <SheetHeader>
+            <SheetTitle>
+              Discuss: {discussingDeliverable?.name || discussingDeliverable?.title}
+            </SheetTitle>
+            <SheetDescription>
+              Chat about this deliverable with the partner
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-6 h-[calc(100vh-200px)]">
+            {discussingDeliverable && (
+              <PartnerMessages
+                partnerId={partnerId}
+                deliverableId={discussingDeliverable.id}
+                onClose={() => setDiscussingDeliverable(null)}
+              />
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

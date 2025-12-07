@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { notificationsService } from "@/services/supabaseService";
+import { notificationsService, partnerMessagesService, partnerSubmissionsService } from "@/services/supabaseService";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -11,7 +12,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Bell, BellRing, AlertCircle, Info, Clock, CheckCircle, RefreshCw, ChevronRight } from "lucide-react";
+import { Bell, BellRing, AlertCircle, Info, Clock, CheckCircle, RefreshCw, ChevronRight, MessageSquare, FileText } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -20,6 +21,9 @@ export default function GlobalNotificationBell({ partnerId, partnerEmail }) {
   const [isOpen, setIsOpen] = useState(false);
   const [lastNotificationCount, setLastNotificationCount] = useState(0);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin;
 
   const { data: notifications = [] } = useQuery({
     queryKey: ['unreadNotifications', partnerId],
@@ -31,6 +35,44 @@ export default function GlobalNotificationBell({ partnerId, partnerEmail }) {
     },
     enabled: !!partnerId,
     refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
+  // Get unread messages count
+  const { data: unreadMessagesCount = 0 } = useQuery({
+    queryKey: ['unreadMessagesCount', partnerId],
+    queryFn: async () => {
+      if (partnerId) {
+        if (isAdmin) {
+          return partnerMessagesService.getAdminUnreadCount();
+        } else {
+          return partnerMessagesService.getUnreadCount(partnerId);
+        }
+      }
+      return 0;
+    },
+    enabled: !!partnerId,
+    refetchInterval: 30000,
+  });
+
+  // Get pending submissions count (for admins)
+  const { data: pendingSubmissionsCount = 0 } = useQuery({
+    queryKey: ['pendingSubmissionsCount'],
+    queryFn: async () => {
+      if (isAdmin) {
+        try {
+          const { data, error } = await partnerSubmissionsService.getAll();
+          if (error) return 0;
+          if (!data || !Array.isArray(data)) return 0;
+          return data.filter(s => s.status === 'submitted' || s.status === 'pending_review').length || 0;
+        } catch (error) {
+          console.error('Error fetching pending submissions:', error);
+          return 0;
+        }
+      }
+      return 0;
+    },
+    enabled: isAdmin,
+    refetchInterval: 30000,
   });
 
   // Show toast when new notifications arrive
@@ -83,8 +125,9 @@ export default function GlobalNotificationBell({ partnerId, partnerEmail }) {
     queryClient.invalidateQueries({ queryKey: ['notifications'] });
   };
 
-  const hasUnread = notifications.length > 0;
-  const actionRequired = notifications.filter(n => n.type === 'action_required' || n.category === 'action_required').length;
+  const totalUnread = notifications.length + unreadMessagesCount + pendingSubmissionsCount;
+  const hasUnread = totalUnread > 0;
+  const actionRequired = notifications.filter(n => n.type === 'action_required' || n.category === 'action_required').length + pendingSubmissionsCount;
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -134,7 +177,7 @@ export default function GlobalNotificationBell({ partnerId, partnerEmail }) {
                     : 'bg-orange-500 hover:bg-orange-600'
                 }`}
               >
-                {notifications.length > 99 ? '99+' : notifications.length}
+                {totalUnread > 99 ? '99+' : totalUnread}
               </Badge>
             </motion.div>
           )}
@@ -158,7 +201,7 @@ export default function GlobalNotificationBell({ partnerId, partnerEmail }) {
             </div>
             {hasUnread && (
               <Badge className="bg-white/20 text-white border-white/30">
-                {notifications.length} unread
+                {totalUnread} unread
               </Badge>
             )}
           </div>
@@ -170,8 +213,74 @@ export default function GlobalNotificationBell({ partnerId, partnerEmail }) {
         </div>
         
         <ScrollArea className="max-h-80">
-          {notifications.length > 0 ? (
+          {(notifications.length > 0 || unreadMessagesCount > 0 || pendingSubmissionsCount > 0) ? (
             <div className="divide-y divide-gray-100">
+              {/* Unread Messages Section */}
+              {unreadMessagesCount > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="p-3 hover:bg-orange-50 transition-colors cursor-pointer group"
+                  onClick={() => {
+                    setIsOpen(false);
+                    if (isAdmin) {
+                      // Navigate to partner messages or admin messages page
+                      navigate('/admin/partners');
+                    } else {
+                      navigate(createPageUrl("Messages"));
+                    }
+                  }}
+                >
+                  <div className="flex gap-3">
+                    <div className="p-2 rounded-lg text-blue-500 bg-blue-100 flex-shrink-0">
+                      <MessageSquare className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm text-gray-900">
+                        {isAdmin ? 'Unread Partner Messages' : 'Unread Messages'}
+                      </p>
+                      <p className="text-xs text-gray-600 mt-0.5">
+                        {unreadMessagesCount} unread message{unreadMessagesCount > 1 ? 's' : ''} from {isAdmin ? 'partners' : 'admin'}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                      {unreadMessagesCount}
+                    </Badge>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Pending Submissions Section (Admin only) */}
+              {isAdmin && pendingSubmissionsCount > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="p-3 hover:bg-orange-50 transition-colors cursor-pointer group"
+                  onClick={() => {
+                    setIsOpen(false);
+                    navigate('/admin/approvals');
+                  }}
+                >
+                  <div className="flex gap-3">
+                    <div className="p-2 rounded-lg text-orange-500 bg-orange-100 flex-shrink-0">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm text-gray-900">
+                        Pending Submissions
+                      </p>
+                      <p className="text-xs text-gray-600 mt-0.5">
+                        {pendingSubmissionsCount} submission{pendingSubmissionsCount > 1 ? 's' : ''} awaiting approval
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                      {pendingSubmissionsCount}
+                    </Badge>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Regular Notifications */}
               {notifications.slice(0, 5).map((notification) => {
                 const Icon = getTypeIcon(notification.type, notification.category);
                 const colorClass = getTypeColor(notification.type, notification.category);
