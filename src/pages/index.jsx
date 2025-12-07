@@ -494,6 +494,8 @@ function PagesContent() {
                                         {/* New Deliverables Review Route */}
                                         <Route path="deliverables-review" element={<DeliverablesReview />} />
                                         
+                                        <Route path="review-nominations" element={<ReviewNominations />} />
+                                        
                                         <Route path="messages" element={<AdminMessages />} />
                                         <Route path="vip-invitations" element={<VIPApprovals />} />
                                         <Route path="booths" element={<AdminBooths />} />

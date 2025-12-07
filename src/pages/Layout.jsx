@@ -674,6 +674,7 @@ export default function Layout({ children, currentPageName }) {
     { title: "Invite Partner", url: "/admin/invite-partner", icon: UserPlus },
     { title: "Review Deliverables", url: "/admin/deliverables-review", icon: ShieldCheck },
     { title: "Approvals System", url: "/admin/approvals", icon: CheckSquare },
+    { title: "Content Review", url: "/admin/review-nominations", icon: FileText },
     { title: "Support Messages", url: "/admin/support", icon: MessageCircle, badge: adminSupportUnread > 0 ? adminSupportUnread : null },
     { title: "Exhibitor Stands", url: "/admin/booths", icon: Building2 },
     { title: "Contracts", url: "/admin/contracts", icon: Briefcase },
