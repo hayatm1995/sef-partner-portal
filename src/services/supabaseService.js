@@ -442,9 +442,8 @@ export const nominationsService = {
       nominationWithRequiredFields.status = 'Submitted';
     }
 
-    // Add created_by if the column exists (check by trying to insert it, will be ignored if column doesn't exist)
-    // Note: If created_by column doesn't exist in table, this will be silently ignored by Supabase
-    // If RLS requires it, we'll get an error and can add the column via migration
+    // Add created_by field (required for RLS)
+    // This field references auth.users.id
     if (nominationData.created_by === undefined) {
       nominationWithRequiredFields.created_by = authUser.id;
     }
@@ -456,21 +455,10 @@ export const nominationsService = {
       .single();
     
     if (error) {
-      // If error is about missing created_by column, log it but don't fail
-      if (error.message && error.message.includes('created_by')) {
-        console.warn('[nominationsService] created_by column may not exist. Error:', error);
-        // Retry without created_by
-        const { data: retryData, error: retryError } = await supabase
-          .from('nominations')
-          .insert({
-            ...nominationWithRequiredFields,
-            created_by: undefined
-          })
-          .select()
-          .single();
-        
-        if (retryError) throw retryError;
-        return retryData;
+      // If error is about missing created_by column, provide helpful message
+      if (error.message && (error.message.includes('created_by') || (error.message.includes('column') && error.code === '42703'))) {
+        console.error('[nominationsService] created_by column may not exist. Please run migration 012_add_nominations_created_by.sql');
+        throw new Error('Nominations table is missing created_by column. Please run database migration.');
       }
       throw error;
     }
