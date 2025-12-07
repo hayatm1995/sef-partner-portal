@@ -84,6 +84,20 @@ export default function Layout({ children, currentPageName }) {
   const [showSplash, setShowSplash] = useState(true);
   const [showChat, setShowChat] = useState(false);
 
+  // STRICT ROLE LOGIC - Use role from AuthContext (already resolved from database)
+  // Get role from context - this is the source of truth
+  // MUST be defined BEFORE any useQuery hooks that depend on it
+  const userRole = role || user?.role;
+  
+  // STRICT: Only 'superadmin' or 'partner' - no fallback behavior
+  const isSuperAdmin = userRole === 'superadmin';
+  const isPartner = userRole === 'partner';
+  
+  // If role is not valid, don't show any sidebar
+  if (!isSuperAdmin && !isPartner) {
+    console.error('[Layout] Invalid role:', userRole);
+  }
+
   // Get all partners (for admin view)
   // In dev mode, ensure Demo Partner is always included
   const isDevModeLayout = typeof window !== 'undefined' && 
@@ -156,24 +170,11 @@ export default function Layout({ children, currentPageName }) {
   const effectivePartnerId = (() => {
     const urlParams = new URLSearchParams(location.search);
     const viewAsParam = urlParams.get('viewAs');
-    if (viewAsParam && (['admin', 'sef_admin', 'superadmin'].includes(user?.role) || user?.is_super_admin)) {
+    if (viewAsParam && isSuperAdmin) {
       return viewAsParam; // This would be partner_id when viewing as partner
     }
     return user?.partner_id;
   })();
-
-  // STRICT ROLE LOGIC - Use role from AuthContext (already resolved from database)
-  // Get role from context - this is the source of truth
-  const userRole = role || user?.role;
-  
-  // STRICT: Only 'superadmin' or 'partner' - no fallback behavior
-  const isSuperAdmin = userRole === 'superadmin';
-  const isPartner = userRole === 'partner';
-  
-  // If role is not valid, don't show any sidebar
-  if (!isSuperAdmin && !isPartner) {
-    console.error('[Layout] Invalid role:', userRole);
-  }
   
   const viewingAsPartnerId = effectivePartnerId !== user?.partner_id ? effectivePartnerId : null;
   const viewingAsPartner = viewingAsPartnerId ? allPartners.find(p => p.id === viewingAsPartnerId) : null;
