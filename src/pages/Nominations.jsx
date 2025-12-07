@@ -44,11 +44,13 @@ export default function Nominations() {
 
   const createNominationMutation = useMutation({
     mutationFn: async (data) => {
+      // nominationsService.create will automatically add partner_id, created_by, and status
+      // But we can still pass partner_id if we have it (for admin viewing as partner)
       const nominationData = {
         ...data,
-        partner_id: currentPartnerId,
+        partner_id: currentPartnerId || undefined, // Will be set by service if not provided
         category: data.type || data.category,
-        status: 'Submitted',
+        status: 'pending', // Will be mapped to 'Submitted' by service
       };
       return nominationsService.create(nominationData);
     },

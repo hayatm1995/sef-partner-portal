@@ -411,10 +411,41 @@ export const nominationsService = {
   },
 
   // Create nomination
+  // Automatically adds partner_id, created_by, and status for RLS compliance
   create: async (nominationData) => {
+    // Get current auth user
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser) {
+      throw new Error('User must be authenticated to create nominations');
+    }
+
+    // Get partner_id from partner_users table
+    const { data: partnerUser, error: partnerUserError } = await supabase
+      .from('partner_users')
+      .select('id, partner_id')
+      .eq('auth_user_id', authUser.id)
+      .single();
+
+    if (partnerUserError || !partnerUser) {
+      throw new Error('User must be associated with a partner to create nominations');
+    }
+
+    // Ensure required fields for RLS
+    const nominationWithRequiredFields = {
+      ...nominationData,
+      partner_id: nominationData.partner_id || partnerUser.partner_id,
+      created_by: nominationData.created_by || authUser.id,
+      status: nominationData.status || 'pending',
+    };
+
+    // If status is 'pending', map to 'Submitted' (as per schema)
+    if (nominationWithRequiredFields.status === 'pending') {
+      nominationWithRequiredFields.status = 'Submitted';
+    }
+
     const { data, error } = await supabase
       .from('nominations')
-      .insert(nominationData)
+      .insert(nominationWithRequiredFields)
       .select()
       .single();
     
