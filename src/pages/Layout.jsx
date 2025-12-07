@@ -89,12 +89,13 @@ export default function Layout({ children, currentPageName }) {
   // MUST be defined BEFORE any useQuery hooks that depend on it
   const userRole = role || user?.role;
   
-  // STRICT: Only 'superadmin' or 'partner' - no fallback behavior
+  // STRICT: Only 'superadmin', 'admin', or 'partner' - no fallback behavior
   const isSuperAdmin = userRole === 'superadmin';
+  const isAdmin = userRole === 'admin' || isSuperAdmin; // Admin includes superadmin
   const isPartner = userRole === 'partner';
   
   // If role is not valid, don't show any sidebar
-  if (!isSuperAdmin && !isPartner) {
+  if (!isSuperAdmin && !isAdmin && !isPartner) {
     console.error('[Layout] Invalid role:', userRole);
   }
 
@@ -567,8 +568,8 @@ export default function Layout({ children, currentPageName }) {
   const accountItems = [];
 
   // STRICT: Show partner navigation ONLY if user is a partner
-  // Superadmins can view as partner, but that's handled separately
-  const shouldShowPartnerNav = isPartner || (isSuperAdmin && !!viewingAsPartnerId);
+  // Admins/superadmins can view as partner, but that's handled separately
+  const shouldShowPartnerNav = isPartner || (isAdmin && !!viewingAsPartnerId);
   
   // Pass isAdmin && viewingAsPartnerId as isAdminViewing flag
   const filteredSections = shouldShowPartnerNav
@@ -600,8 +601,9 @@ export default function Layout({ children, currentPageName }) {
     });
   }
 
-  // STRICT: Show Admin nav ONLY if user is superadmin and NOT viewing as partner
-  const adminNavItems = (isSuperAdmin && !viewingAsPartnerId) ? adminBaseNavItems : [];
+  // STRICT: Show Admin nav ONLY if user is admin/superadmin and NOT viewing as partner
+  // "View as Partner" button works without changing actual role - it's just a view mode
+  const adminNavItems = (isAdmin && !viewingAsPartnerId) ? adminBaseNavItems : [];
 
   const { logout } = useAuth();
   
@@ -671,8 +673,8 @@ export default function Layout({ children, currentPageName }) {
               />
             )}
 
-            {/* Admin Nav Items - STRICT: Only show for superadmin */}
-            {isSuperAdmin && adminNavItems.length > 0 && (
+            {/* Admin Nav Items - STRICT: Only show for admin/superadmin */}
+            {isAdmin && adminNavItems.length > 0 && (
               <SidebarGroup>
                 <SidebarGroupLabel>Admin</SidebarGroupLabel>
                 <SidebarGroupContent>
@@ -726,8 +728,9 @@ export default function Layout({ children, currentPageName }) {
               </SidebarGroup>
             )}
 
-            {/* Admin View As Partner Dropdown - STRICT: Only for superadmin */}
-            {isSuperAdmin && (
+            {/* Admin View As Partner Dropdown - STRICT: Only for admin/superadmin */}
+            {/* This allows viewing partner UI without changing actual role */}
+            {isAdmin && (
               <div className="px-4 py-3 border-b border-gray-200/60">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -866,8 +869,9 @@ export default function Layout({ children, currentPageName }) {
               <div className="flex items-center gap-4 ml-auto">
                 <GlobalNotificationBell partnerId={currentPartner?.id} />
                 
-                {/* Role Switch Dropdown - only show if user is superadmin */}
-                {isSuperAdmin && (
+                {/* Role Switch Dropdown - only show if user is admin/superadmin */}
+                {/* Note: This is a view mode, not an actual role change */}
+                {isAdmin && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" className="border-orange-200 hover:bg-orange-50 text-orange-700">

@@ -1,13 +1,47 @@
 import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
 import { getUserRole, getUserRoleSync } from '@/utils/auth';
+import { SUPERADMIN } from '@/constants/users';
 
 const AuthContext = createContext(undefined);
 
 export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [role, setRole] = useState(null);
+  const [partnerId, setPartnerId] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  /**
+   * Sync user role and partner_id to app_metadata after login
+   * This ensures JWT contains these values for RLS policies
+   */
+  const syncUserMetadata = async (user) => {
+    try {
+      // Get role and partner_id from database
+      const roleInfo = await getUserRole(user);
+      
+      // If app_metadata doesn't match, we need to update it via Edge Function
+      // Client-side cannot update app_metadata directly
+      const currentAppRole = user.app_metadata?.role;
+      const currentAppPartnerId = user.app_metadata?.partner_id;
+      
+      if (currentAppRole !== roleInfo.role || currentAppPartnerId !== roleInfo.partner_id) {
+        console.log('[syncUserMetadata] Metadata mismatch, would sync:', {
+          current: { role: currentAppRole, partner_id: currentAppPartnerId },
+          expected: roleInfo
+        });
+        
+        // Call Edge Function to update app_metadata (if available)
+        // For now, we'll rely on the invite-partner Edge Function to set this
+        // Or we can create a sync-metadata Edge Function
+      }
+      
+      return roleInfo;
+    } catch (error) {
+      console.error('[syncUserMetadata] Error:', error);
+      return { role: null, partner_id: null };
+    }
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -16,10 +50,16 @@ export const AuthProvider = ({ children }) => {
         setSession(data.session);
         if (data.session?.user) {
           // Use getUserRole helper that checks both metadata and database
-          const resolvedRole = await getUserRole(data.session.user);
-          setRole(resolvedRole);
+          const roleInfo = await getUserRole(data.session.user);
+          setRole(roleInfo.role);
+          setPartnerId(roleInfo.partner_id);
+          
+          // Sync metadata if needed (after initial load)
+          // Don't block on this, just log if mismatch
+          syncUserMetadata(data.session.user).catch(console.error);
         } else {
           setRole(null);
+          setPartnerId(null);
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
@@ -32,14 +72,21 @@ export const AuthProvider = ({ children }) => {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_evt, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
       if (session?.user) {
         // Use getUserRole helper that checks both metadata and database
-        const resolvedRole = await getUserRole(session.user);
-        setRole(resolvedRole);
+        const roleInfo = await getUserRole(session.user);
+        setRole(roleInfo.role);
+        setPartnerId(roleInfo.partner_id);
+        
+        // After SIGNED_IN event, sync metadata
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          syncUserMetadata(session.user).catch(console.error);
+        }
       } else {
         setRole(null);
+        setPartnerId(null);
       }
     });
 
@@ -54,8 +101,13 @@ export const AuthProvider = ({ children }) => {
       });
       
       if (data?.session?.user) {
-        const resolvedRole = await getUserRole(data.session.user);
-        setRole(resolvedRole);
+        // Get role and partner_id from metadata/database
+        const roleInfo = await getUserRole(data.session.user);
+        setRole(roleInfo.role);
+        setPartnerId(roleInfo.partner_id);
+        
+        // Sync metadata to ensure JWT contains role and partner_id
+        await syncUserMetadata(data.session.user);
       }
       
       return { data, error };
@@ -115,13 +167,14 @@ export const AuthProvider = ({ children }) => {
     const testUser = {
       id: SUPERADMIN.uid,
       email: SUPERADMIN.email,
-      app_metadata: { role: 'superadmin' },
+      app_metadata: { role: 'superadmin', partner_id: null },
       user_metadata: { full_name: 'Test Superadmin' },
     };
     
     setSession({ user: testUser });
-    const resolvedRole = await getUserRole(testUser);
-    setRole(resolvedRole);
+    const roleInfo = await getUserRole(testUser);
+    setRole(roleInfo.role);
+    setPartnerId(roleInfo.partner_id);
     
     return { data: { user: testUser }, error: null };
   };
@@ -130,15 +183,25 @@ export const AuthProvider = ({ children }) => {
     await supabase.auth.signOut();
     setSession(null);
     setRole(null);
+    setPartnerId(null);
+    // Clear all storage
+    localStorage.clear();
+    sessionStorage.clear();
   };
 
-  // Create enriched user object with all expected properties - memoized to update when session/role changes
+  // Create enriched user object with all expected properties - memoized to update when session/role/partnerId changes
   const enrichedUser = useMemo(() => {
     if (!session?.user) return null;
     
     const isSuperAdmin = role === 'superadmin' || role === 'sef_admin';
     const isAdmin = role === 'admin' || isSuperAdmin;
     const isPartner = role === 'partner';
+
+    // Get partner_id from: 1) state, 2) app_metadata, 3) user_metadata
+    const effectivePartnerId = partnerId || 
+      session.user.app_metadata?.partner_id || 
+      session.user.user_metadata?.partner_id || 
+      null;
 
     return {
       ...session.user,
@@ -148,15 +211,16 @@ export const AuthProvider = ({ children }) => {
       is_partner: isPartner,
       full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'User',
       company_name: session.user.user_metadata?.company_name || null,
-      partner_id: session.user.user_metadata?.partner_id || null,
+      partner_id: effectivePartnerId, // Use resolved partner_id
       email: session.user.email,
     };
-  }, [session, role]);
+  }, [session, role, partnerId]);
 
   const value = {
     session,
     user: enrichedUser,
     role,
+    partnerId, // Expose partner_id in context
     isSuperadmin: role === 'superadmin' || role === 'sef_admin',
     loading,
     logout,

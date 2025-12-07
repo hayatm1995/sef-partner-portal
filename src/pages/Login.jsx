@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { AlertCircle, Loader2, Mail, Chrome } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import { handleMagicLinkCallback, isMagicLinkCallback } from '@/utils/magicLinkHandler';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -20,30 +21,27 @@ export default function Login() {
   const location = useLocation();
   const { login, loginWithMagicLink, loginWithGoogle, loginWithMicrosoft, loginAsTestUser, user, viewMode } = useAuth();
 
-  // Helper function to get redirect URL based on role and viewMode
-  const getRedirectUrl = React.useCallback((userRole, currentViewMode) => {
-    if (!userRole) return '/Dashboard';
+  // Helper function to get redirect URL based on role
+  // Updated to use proper dashboard routes: /admin/dashboard and /partner/dashboard
+  const getRedirectUrl = React.useCallback((userRole) => {
+    if (!userRole) return '/Login';
     
-    // If viewMode is set, respect it
-    if (currentViewMode === 'partner') {
-      return '/Dashboard';
-    }
-    if (currentViewMode === 'admin') {
-      return '/admin/partners';
-    }
-    
-    // Auto mode: use role-based redirect
-    // Superadmin goes to control room
+    // STRICT role-based routing:
+    // - superadmin → /admin/dashboard
+    // - admin → /admin/dashboard  
+    // - partner → /partner/dashboard
     if (userRole === 'superadmin' || userRole === 'sef_admin') {
-      return '/superadmin/control-room';
+      return '/admin/dashboard';
     }
-    // Admin roles go to admin panel
     if (userRole === 'admin') {
-      return '/admin/partners';
+      return '/admin/dashboard';
+    }
+    if (userRole === 'partner') {
+      return '/partner/dashboard';
     }
     
-    // Partner roles (marketing, operations, viewer) go to dashboard
-    return '/Dashboard';
+    // Fallback to login if role is invalid
+    return '/Login';
   }, []);
 
   const handleSubmit = async (e) => {
@@ -65,8 +63,8 @@ export default function Login() {
         setTimeout(() => {
           // Get redirect URL from location state or determine from role
           const from = location.state?.from?.pathname;
-          if (from && from !== '/Login' && !from.startsWith('/admin')) {
-            // Only redirect to requested page if it's not admin route (let role-based redirect handle admin routes)
+          // Only redirect to requested page if user has access (role-based check happens in routing)
+          if (from && from !== '/Login') {
             console.log('🚀 Redirecting to requested page:', from);
             navigate(from, { replace: true });
           } else {
@@ -145,13 +143,45 @@ export default function Login() {
 
   // Redirect authenticated users away from login page
   React.useEffect(() => {
-    if (user) {
-      const redirectUrl = getRedirectUrl(user.role, viewMode);
-      console.log('User already authenticated, redirecting to:', redirectUrl, 'viewMode:', viewMode);
+    if (user && user.role) {
+      const redirectUrl = getRedirectUrl(user.role);
+      console.log('[Login] User already authenticated, redirecting to:', redirectUrl, 'role:', user.role);
       navigate(redirectUrl, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, viewMode, navigate]);
+  }, [user, navigate]);
+
+  // Handle magic link callback after user clicks invite link
+  React.useEffect(() => {
+    const processMagicLink = async () => {
+      if (isMagicLinkCallback()) {
+        console.log('[Login] Processing magic link callback...');
+        try {
+          const roleInfo = await handleMagicLinkCallback();
+          
+          if (roleInfo.role) {
+            console.log('[Login] Magic link processed, role:', roleInfo.role);
+            toast.success('Welcome! Setting up your account...');
+            
+            // Wait for auth state to update, then redirect
+            setTimeout(() => {
+              const redirectUrl = getRedirectUrl(roleInfo.role);
+              console.log('[Login] Redirecting after magic link:', redirectUrl);
+              navigate(redirectUrl, { replace: true });
+            }, 1000);
+          } else {
+            console.error('[Login] Failed to get role from magic link');
+            toast.error('Failed to set up account. Please contact support.');
+          }
+        } catch (error) {
+          console.error('[Login] Error processing magic link:', error);
+          toast.error('An error occurred. Please try again.');
+        }
+      }
+    };
+    
+    processMagicLink();
+  }, [navigate]);
 
   // Check for bypass URL parameter
   React.useEffect(() => {

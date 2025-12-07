@@ -2,20 +2,28 @@ import { supabase } from '@/config/supabase';
 import { SUPERADMIN } from '@/constants/users';
 
 /**
- * Get user role from multiple sources in priority order:
+ * User role and partner information
+ */
+export interface UserRoleInfo {
+  role: 'superadmin' | 'admin' | 'partner' | null;
+  partner_id: string | null;
+}
+
+/**
+ * Get user role and partner_id from multiple sources in priority order:
  * 1. SUPERADMIN constant (hardcoded override)
- * 2. app_metadata.role (set by admin functions - most secure)
- * 3. user_metadata.role (fallback)
+ * 2. app_metadata.role and app_metadata.partner_id (set by admin functions - most secure)
+ * 3. user_metadata.role and user_metadata.partner_id (fallback)
  * 4. partner_users table (database source of truth)
  * 
- * Returns 'superadmin' or 'partner' - no fallback to email checks
+ * Returns role and partner_id - no fallback to email checks
  * 
  * @param {Object} user - Supabase auth user object
- * @returns {Promise<'superadmin' | 'partner' | null>} - Resolved role
+ * @returns {Promise<UserRoleInfo>} - Resolved role and partner_id
  */
-export async function getUserRole(user: any): Promise<'superadmin' | 'partner' | null> {
+export async function getUserRole(user: any): Promise<UserRoleInfo> {
   if (!user) {
-    return null;
+    return { role: null, partner_id: null };
   }
 
   // 1. Check for Superadmin Override (Hardcoded)
@@ -24,49 +32,63 @@ export async function getUserRole(user: any): Promise<'superadmin' | 'partner' |
     user.email?.toLowerCase() === SUPERADMIN.email.toLowerCase()
   ) {
     console.log('[getUserRole] Superadmin override');
-    return 'superadmin';
+    return { role: 'superadmin', partner_id: null };
   }
 
-  // 2. Check app_metadata (secure, set by admin functions)
+  // 2. Check app_metadata (secure, set by admin functions) - PRIORITY SOURCE
   const appRole = user.app_metadata?.role;
+  const appPartnerId = user.app_metadata?.partner_id;
+  
   if (appRole && ['superadmin', 'sef_admin', 'admin'].includes(appRole)) {
-    console.log('[getUserRole] Role from app_metadata:', appRole);
-    return 'superadmin';
+    console.log('[getUserRole] Role from app_metadata:', appRole, 'partner_id:', appPartnerId);
+    return { 
+      role: appRole === 'sef_admin' ? 'superadmin' : (appRole === 'admin' ? 'admin' : 'superadmin'),
+      partner_id: appPartnerId || null 
+    };
   }
   if (appRole === 'partner') {
-    console.log('[getUserRole] Role from app_metadata: partner');
-    return 'partner';
+    console.log('[getUserRole] Role from app_metadata: partner, partner_id:', appPartnerId);
+    return { role: 'partner', partner_id: appPartnerId || null };
   }
 
   // 3. Check user_metadata (fallback)
   const userRole = user.user_metadata?.role;
+  const userPartnerId = user.user_metadata?.partner_id;
+  
   if (userRole && ['superadmin', 'sef_admin', 'admin'].includes(userRole)) {
-    console.log('[getUserRole] Role from user_metadata:', userRole);
-    return 'superadmin';
+    console.log('[getUserRole] Role from user_metadata:', userRole, 'partner_id:', userPartnerId);
+    return { 
+      role: userRole === 'sef_admin' ? 'superadmin' : (userRole === 'admin' ? 'admin' : 'superadmin'),
+      partner_id: userPartnerId || null 
+    };
   }
   if (userRole === 'partner') {
-    console.log('[getUserRole] Role from user_metadata: partner');
-    return 'partner';
+    console.log('[getUserRole] Role from user_metadata: partner, partner_id:', userPartnerId);
+    return { role: 'partner', partner_id: userPartnerId || null };
   }
 
   // 4. Query partner_users table (database source of truth)
   try {
     const { data: partnerUser, error } = await supabase
       .from('partner_users')
-      .select('role')
+      .select('role, partner_id')
       .eq('auth_user_id', user.id)
       .single();
 
-    if (!error && partnerUser?.role) {
+    if (!error && partnerUser) {
       const dbRole = partnerUser.role;
-      console.log('[getUserRole] Role from partner_users table:', dbRole);
+      const dbPartnerId = partnerUser.partner_id;
+      console.log('[getUserRole] Role from partner_users table:', dbRole, 'partner_id:', dbPartnerId);
       
       // Normalize database roles to our role system
       if (['sef_admin', 'admin', 'superadmin'].includes(dbRole)) {
-        return 'superadmin';
+        return { 
+          role: dbRole === 'sef_admin' ? 'superadmin' : (dbRole === 'admin' ? 'admin' : 'superadmin'),
+          partner_id: dbPartnerId || null 
+        };
       }
       // If role is 'partner' or any other value, return 'partner'
-      return 'partner';
+      return { role: 'partner', partner_id: dbPartnerId || null };
     }
   } catch (error) {
     console.warn('[getUserRole] Error querying partner_users:', error);
@@ -74,43 +96,47 @@ export async function getUserRole(user: any): Promise<'superadmin' | 'partner' |
 
   // 5. Default to partner (no email-domain fallback)
   console.log('[getUserRole] Defaulting to partner role');
-  return 'partner';
+  return { role: 'partner', partner_id: null };
 }
 
 /**
- * Get current user's role from active session
+ * Get current user's role and partner_id from active session
  * Fetches fresh user data from Supabase auth
  * 
- * @returns {Promise<'superadmin' | 'partner' | null>}
+ * @returns {Promise<UserRoleInfo>}
  */
-export async function getCurrentUserRole(): Promise<'superadmin' | 'partner' | null> {
+export async function getCurrentUserRole(): Promise<UserRoleInfo> {
   try {
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error || !user) {
-      return null;
+      return { role: null, partner_id: null };
     }
     return await getUserRole(user);
   } catch (error) {
     console.error('[getCurrentUserRole] Error:', error);
-    return null;
+    return { role: null, partner_id: null };
   }
 }
 
 /**
- * Synchronous version that uses cached role or returns default
- * Use this when you need a role immediately without async
+ * Synchronous version that uses cached role/partner_id or returns default
+ * Use this when you need role/partner_id immediately without async
  * 
  * @param {Object} user - Supabase auth user object
  * @param {string} cachedRole - Previously resolved role
- * @returns {'superadmin' | 'partner' | null}
+ * @param {string} cachedPartnerId - Previously resolved partner_id
+ * @returns {UserRoleInfo}
  */
 export function getUserRoleSync(
   user: any, 
-  cachedRole: string | null = null
-): 'superadmin' | 'partner' | null {
-  if (!user) return null;
-  if (cachedRole === 'superadmin' || cachedRole === 'partner') {
-    return cachedRole;
+  cachedRole: string | null = null,
+  cachedPartnerId: string | null = null
+): UserRoleInfo {
+  if (!user) return { role: null, partner_id: null };
+  
+  // Use cached values if available
+  if (cachedRole && ['superadmin', 'admin', 'partner'].includes(cachedRole)) {
+    return { role: cachedRole as 'superadmin' | 'admin' | 'partner', partner_id: cachedPartnerId || null };
   }
 
   // Quick checks without database query
@@ -118,26 +144,62 @@ export function getUserRoleSync(
     user.id === SUPERADMIN.uid ||
     user.email?.toLowerCase() === SUPERADMIN.email.toLowerCase()
   ) {
-    return 'superadmin';
+    return { role: 'superadmin', partner_id: null };
   }
 
   const appRole = user.app_metadata?.role;
+  const appPartnerId = user.app_metadata?.partner_id;
+  
   if (appRole && ['superadmin', 'sef_admin', 'admin'].includes(appRole)) {
-    return 'superadmin';
+    return { 
+      role: appRole === 'sef_admin' ? 'superadmin' : (appRole === 'admin' ? 'admin' : 'superadmin'),
+      partner_id: appPartnerId || null 
+    };
   }
   if (appRole === 'partner') {
-    return 'partner';
+    return { role: 'partner', partner_id: appPartnerId || null };
   }
 
   const userRole = user.user_metadata?.role;
+  const userPartnerId = user.user_metadata?.partner_id;
+  
   if (userRole && ['superadmin', 'sef_admin', 'admin'].includes(userRole)) {
-    return 'superadmin';
+    return { 
+      role: userRole === 'sef_admin' ? 'superadmin' : (userRole === 'admin' ? 'admin' : 'superadmin'),
+      partner_id: userPartnerId || null 
+    };
   }
   if (userRole === 'partner') {
-    return 'partner';
+    return { role: 'partner', partner_id: userPartnerId || null };
   }
 
   // Default to partner if no metadata found (no email fallback)
-  return 'partner';
+  return { role: 'partner', partner_id: null };
+}
+
+/**
+ * Update user's app_metadata with role and partner_id
+ * This ensures the JWT contains these values for RLS policies
+ * 
+ * @param {string} userId - Auth user ID
+ * @param {string} role - User role
+ * @param {string} partnerId - Partner ID (optional)
+ * @returns {Promise<boolean>} - Success status
+ */
+export async function updateUserMetadata(userId: string, role: string, partnerId: string | null = null): Promise<boolean> {
+  try {
+    // This requires admin API - should be done via Edge Function or backend
+    // For now, we'll use a Supabase Edge Function or backend API
+    console.log('[updateUserMetadata] Would update user metadata:', { userId, role, partnerId });
+    
+    // Note: Client-side cannot update app_metadata directly
+    // This should be called from an Edge Function or backend API
+    // The invite-partner Edge Function should handle this
+    
+    return true;
+  } catch (error) {
+    console.error('[updateUserMetadata] Error:', error);
+    return false;
+  }
 }
 

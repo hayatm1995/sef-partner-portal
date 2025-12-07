@@ -323,8 +323,8 @@ function PagesContent() {
     // Use resolved role from context (already checked against database)
     const userRole = role;
     
-    // Validate role is one of our allowed values
-    if (!userRole || !['superadmin', 'partner'].includes(userRole)) {
+    // Validate role is one of our allowed values (superadmin, admin, or partner)
+    if (!userRole || !['superadmin', 'admin', 'partner'].includes(userRole)) {
         console.error('[PagesContent] Invalid role:', userRole);
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-gray-50 to-stone-50">
@@ -335,10 +335,11 @@ function PagesContent() {
     
     // Strict role checks - no fallback
     const userIsSuperadmin = userRole === 'superadmin';
+    const userIsAdmin = userRole === 'admin' || userIsSuperadmin;
     const userIsPartner = userRole === 'partner';
     
     // If role is invalid, redirect to login
-    if (!userIsSuperadmin && !userIsPartner) {
+    if (!userIsSuperadmin && !userIsAdmin && !userIsPartner) {
         return <Navigate to="/Login" replace />;
     }
     
@@ -348,22 +349,24 @@ function PagesContent() {
                 <Routes>
                     {/* Root redirect - based on STRICT role */}
                     <Route path="/" element={
-                        userIsSuperadmin
+                        userIsSuperadmin || userRole === 'admin'
                             ? <Navigate to="/admin/dashboard" replace /> 
-                            : <Navigate to="/partner/profile" replace />
+                            : userIsPartner
+                            ? <Navigate to="/partner/dashboard" replace />
+                            : <Navigate to="/Login" replace />
                     } />
                     <Route path="/Unauthorized" element={<Unauthorized />} />
                     
                     {/* Partner Routes - ONLY accessible to partners */}
                     {userIsPartner && (
                         <>
-                            {/* Standard Partner Dashboard */}
-                            <Route path="/Dashboard" element={<Dashboard />} />
-                            
                             {/* Explicit Partner Routes */}
-                            <Route path="/partner/profile" element={<Profile />} />
                             <Route path="/partner/dashboard" element={<Dashboard />} />
+                            <Route path="/partner/profile" element={<Profile />} />
                             <Route path="/partner/deliverables" element={<PartnerDeliverables />} />
+                            
+                            {/* Legacy routes - redirect to new partner routes */}
+                            <Route path="/Dashboard" element={<Navigate to="/partner/dashboard" replace />} />
                             
                             {/* Legacy/Shared Routes */}
                             <Route path="/Deliverables" element={<PartnerDeliverables />} />
@@ -409,10 +412,10 @@ function PagesContent() {
                         </>
                     )}
                     
-                    {/* Admin Routes - STRICT: ONLY accessible to superadmin */}
-                    {userIsSuperadmin && (
+                    {/* Admin Routes - STRICT: Accessible to superadmin and admin */}
+                    {(userIsSuperadmin || userIsAdmin) && (
                         <>
-                            {/* Admin Dashboard Route */}
+                            {/* Admin Dashboard Route - accessible to superadmin and admin */}
                             <Route path="/admin/dashboard" element={<Dashboard />} />
                             
                             {/* Redirect /admin to /admin/dashboard */}
