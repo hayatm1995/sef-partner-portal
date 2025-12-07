@@ -86,7 +86,7 @@ export default function AdminBoothDetails() {
             const { activityLogService } = await import('@/services/supabaseService');
             await activityLogService.create({
               partner_id: booth.partner_id,
-              user_id: user?.id,
+              user_id: user?.partner_user?.id || user?.id,
               activity_type: 'booth_status_updated',
               description: `Booth status updated to "${newStatus}"`,
               metadata: {
@@ -166,19 +166,22 @@ export default function AdminBoothDetails() {
   };
 
   const getStatusBadge = (status) => {
+    // Map database statuses to UI statuses with proper colors
     const statusMap = {
-      'Assignment Pending': { className: 'bg-gray-100 text-gray-800' },
-      'Pending': { className: 'bg-yellow-100 text-yellow-800' },
-      'Assigned': { className: 'bg-blue-100 text-blue-800' },
-      'Approved': { className: 'bg-green-100 text-green-800' },
-      'Revisions Needed': { className: 'bg-red-100 text-red-800' },
+      'Assignment Pending': { label: 'Pending', className: 'bg-gray-100 text-gray-800 border-gray-200' },
+      'Pending': { label: 'Pending', className: 'bg-gray-100 text-gray-800 border-gray-200' },
+      'Assigned': { label: 'Assigned', className: 'bg-blue-100 text-blue-800 border-blue-200' },
+      'Approved': { label: 'Confirmed', className: 'bg-green-100 text-green-800 border-green-200' },
+      'Confirmed': { label: 'Confirmed', className: 'bg-green-100 text-green-800 border-green-200' },
+      'Completed': { label: 'Completed', className: 'bg-green-100 text-green-800 border-green-200' },
+      'Revisions Needed': { label: 'Pending', className: 'bg-gray-100 text-gray-800 border-gray-200' },
     };
 
     const statusConfig = statusMap[status] || statusMap['Assignment Pending'];
     
     return (
-      <Badge className={statusConfig.className}>
-        {status || 'Assignment Pending'}
+      <Badge variant="outline" className={statusConfig.className}>
+        {statusConfig.label}
       </Badge>
     );
   };

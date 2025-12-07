@@ -376,6 +376,13 @@ export default function PartnerHub() {
       gradient: "from-orange-500 to-amber-600"
     },
     { 
+      id: "booth", 
+      label: "Booth", 
+      icon: Building2, 
+      section: "booth",
+      gradient: "from-purple-500 to-indigo-600"
+    },
+    { 
       id: "contracts", 
       label: "Contracts", 
       icon: Scale, 
