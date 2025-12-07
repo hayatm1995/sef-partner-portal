@@ -25,3 +25,4 @@ dist-ssr
 
 .env
 .vercel
+OPENAI_API_SETUP.md
