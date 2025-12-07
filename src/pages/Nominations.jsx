@@ -27,15 +27,20 @@ export default function Nominations() {
   const viewAsPartnerId = urlParams.get('viewAs');
   const currentPartnerId = viewAsPartnerId || partner?.id;
 
+  const { role, partnerId } = useAuth();
+
   const { data: nominations = [], isLoading } = useQuery({
-    queryKey: ['nominations', currentPartnerId, isAdmin, viewAsPartnerId],
+    queryKey: ['nominations', currentPartnerId, isAdmin, viewAsPartnerId, role, partnerId],
     queryFn: async () => {
       if (isAdmin && !viewAsPartnerId) {
-        // Admin viewing all nominations
-        return nominationsService.getAll();
+        // Admin viewing all nominations (role-based filtering)
+        return nominationsService.getAll({
+          role: role || undefined,
+          currentUserPartnerId: partnerId || undefined,
+        });
       } else if (currentPartnerId) {
         // Partner viewing their own OR admin viewing as specific partner
-        return nominationsService.getAll(currentPartnerId);
+        return nominationsService.getAll({ partnerId: currentPartnerId });
       }
       return [];
     },

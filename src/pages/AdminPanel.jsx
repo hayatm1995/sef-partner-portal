@@ -40,12 +40,17 @@ export default function AdminPanel() {
   const { role } = useAuth();
   const isAdmin = role === 'admin' || role === 'superadmin';
 
-  // Get all partner users for name mapping
+  const { partnerId } = useAuth();
+
+  // Get all partner users for name mapping (role-based filtering)
   const { data: allPartnerUsers = [] } = useQuery({
-    queryKey: ['allPartnerUsers'],
+    queryKey: ['allPartnerUsers', role, partnerId],
     queryFn: async () => {
       try {
-        const result = await partnerUsersService.getAll();
+        const result = await partnerUsersService.getAll({
+          role: role || undefined,
+          currentUserPartnerId: partnerId || undefined,
+        });
         return result || [];
       } catch (error) {
         console.error('Error fetching partner users:', error);
@@ -56,12 +61,15 @@ export default function AdminPanel() {
     retry: 1,
   });
 
-  // Get all partners for company name mapping
+  // Get all partners for company name mapping (role-based filtering)
   const { data: allPartners = [] } = useQuery({
-    queryKey: ['allPartners'],
+    queryKey: ['allPartners', role, partnerId],
     queryFn: async () => {
       try {
-        const result = await partnersService.getAll();
+        const result = await partnersService.getAll({
+          role: role || undefined,
+          currentUserPartnerId: partnerId || undefined,
+        });
         return result || [];
       } catch (error) {
         console.error('Error fetching partners:', error);
@@ -87,10 +95,13 @@ export default function AdminPanel() {
   };
 
   const { data: deliverables = [] } = useQuery({
-    queryKey: ['allDeliverables'],
+    queryKey: ['allDeliverables', role, partnerId],
     queryFn: async () => {
       try {
-        const result = await deliverablesService.getAll();
+        const result = await deliverablesService.getAll({
+          role: role || undefined,
+          currentUserPartnerId: partnerId || undefined,
+        });
         return result || [];
       } catch (error) {
         console.error('Error fetching deliverables:', error);
@@ -102,10 +113,13 @@ export default function AdminPanel() {
   });
 
   const { data: nominations = [] } = useQuery({
-    queryKey: ['allNominations'],
+    queryKey: ['allNominations', role, partnerId],
     queryFn: async () => {
       try {
-        const result = await nominationsService.getAll();
+        const result = await nominationsService.getAll({
+          role: role || undefined,
+          currentUserPartnerId: partnerId || undefined,
+        });
         return result || [];
       } catch (error) {
         console.error('Error fetching nominations:', error);

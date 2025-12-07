@@ -37,13 +37,18 @@ export default function GlobalNotificationBell({ partnerId, partnerEmail }) {
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
-  // Get unread messages count
+  const { role, partnerId: currentUserPartnerId } = useAuth();
+
+  // Get unread messages count (role-based filtering)
   const { data: unreadMessagesCount = 0 } = useQuery({
-    queryKey: ['unreadMessagesCount', partnerId],
+    queryKey: ['unreadMessagesCount', partnerId, role, currentUserPartnerId],
     queryFn: async () => {
       if (partnerId) {
         if (isAdmin) {
-          return partnerMessagesService.getAdminUnreadCount();
+          return partnerMessagesService.getAdminUnreadCount({
+            role: role || undefined,
+            currentUserPartnerId: currentUserPartnerId || undefined,
+          });
         } else {
           return partnerMessagesService.getUnreadCount(partnerId);
         }

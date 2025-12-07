@@ -59,12 +59,17 @@ export default function SuperAdminPanel() {
     }
   }, [location.search, navigate]);
 
-  // Fetch all users from Supabase partner_users table
+  const { partnerId } = useAuth();
+
+  // Fetch all users from Supabase partner_users table (role-based filtering)
   const { data: allUsers = [], isLoading: isLoadingUsers, error: usersError } = useQuery({
-    queryKey: ['allUsers'],
+    queryKey: ['allUsers', role, partnerId],
     queryFn: async () => {
       try {
-        const result = await partnerUsersService.getAll();
+        const result = await partnerUsersService.getAll({
+          role: role || undefined,
+          currentUserPartnerId: partnerId || undefined,
+        });
         console.log('[SuperAdminPanel] Fetched users:', result?.length || 0);
         return result || [];
       } catch (error) {
@@ -73,7 +78,7 @@ export default function SuperAdminPanel() {
         return [];
       }
     },
-    enabled: role === 'superadmin',
+    enabled: role === 'superadmin' || role === 'admin',
     retry: 1,
   });
 

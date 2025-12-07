@@ -132,11 +132,14 @@ export default function Layout({ children, currentPageName }) {
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   
   const { data: allPartners = [], isLoading: loadingPartners, error: partnersError } = useQuery({
-    queryKey: ['allPartners'],
+    queryKey: ['allPartners', role, partnerId],
     queryFn: async () => {
       console.log('[Layout] Fetching all partners for dropdown...');
       const { partnersService } = await import('@/services/supabaseService');
-      const partners = await partnersService.getAll();
+      const partners = await partnersService.getAll({
+        role: role || undefined,
+        currentUserPartnerId: partnerId || undefined,
+      });
       console.log('[Layout] Fetched partners:', partners?.length || 0);
       
       // In dev mode, ensure Demo Partner exists in the list
@@ -209,7 +212,11 @@ export default function Layout({ children, currentPageName }) {
         if (isSuperAdmin) {
           console.log('[Layout] Superadmin: Fetching all users (admins + partners)');
           try {
-            const partners = await partnersService.getAll();
+            const { role, partnerId } = useAuth();
+            const partners = await partnersService.getAll({
+              role: role || undefined,
+              currentUserPartnerId: partnerId || undefined,
+            });
             const allUsers = [];
             
             // Get all partner users
@@ -254,7 +261,10 @@ export default function Layout({ children, currentPageName }) {
         if (isAdmin) {
           console.log('[Layout] Admin: Fetching partner users only');
           try {
-            const partners = await partnersService.getAll();
+            const partners = await partnersService.getAll({
+              role: userRole || undefined,
+              currentUserPartnerId: partnerId || undefined,
+            });
             const allUsers = [];
             for (const p of partners) {
               try {

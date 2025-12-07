@@ -5,15 +5,30 @@ import { supabase } from '@/config/supabase';
 // ============================================
 
 export const partnersService = {
-  // Get all partners (admin only)
-  getAll: async () => {
-    const { data, error } = await supabase
+  // Get all partners with role-based filtering
+  // If partnerId is provided, only returns that partner
+  // If role is 'superadmin', returns all partners
+  // If role is 'admin', returns only partners matching their partner_id
+  getAll: async (options = {}) => {
+    const { partnerId, role, currentUserPartnerId } = options;
+    
+    let query = supabase
       .from('partners')
       .select('*')
       .order('created_at', { ascending: false });
     
+    // If specific partnerId requested, filter by it
+    if (partnerId) {
+      query = query.eq('id', partnerId);
+    } else if (role === 'admin' && currentUserPartnerId) {
+      // Admin can only see their assigned partner
+      query = query.eq('id', currentUserPartnerId);
+    }
+    // If role is 'superadmin' or no role provided, return all (subject to RLS)
+    
+    const { data, error } = await query;
     if (error) throw error;
-    return data;
+    return data || [];
   },
 
   // Get partner by ID
@@ -161,9 +176,13 @@ export const partnerUsersService = {
     if (error) throw error;
   },
 
-  // Get all users (for admin/superadmin views)
-  getAll: async () => {
-    const { data, error } = await supabase
+  // Get all users with role-based filtering
+  // If role is 'superadmin', returns all users
+  // If role is 'admin', returns only users from their assigned partner
+  getAll: async (options = {}) => {
+    const { role, currentUserPartnerId } = options;
+    
+    let query = supabase
       .from('partner_users')
       .select(`
         *,
@@ -171,6 +190,13 @@ export const partnerUsersService = {
       `)
       .order('created_at', { ascending: false });
     
+    // If role is 'admin', filter by their partner_id
+    if (role === 'admin' && currentUserPartnerId) {
+      query = query.eq('partner_id', currentUserPartnerId);
+    }
+    // If role is 'superadmin' or no role provided, return all (subject to RLS)
+    
+    const { data, error } = await query;
     if (error) throw error;
     return data || [];
   },
@@ -271,8 +297,15 @@ export const exhibitorStandsService = {
 // ============================================
 
 export const deliverablesService = {
-  // Get all deliverables (admin) or by partner
-  getAll: async (partnerId = null, category = null) => {
+  // Get all deliverables with role-based filtering
+  // If partnerId is provided, only returns deliverables for that partner
+  // If role is 'superadmin', returns all deliverables
+  // If role is 'admin', returns only deliverables for their assigned partner
+  getAll: async (options = {}) => {
+    const { partnerId, category, role, currentUserPartnerId } = typeof options === 'string' || options === null
+      ? { partnerId: options } // Backward compatibility: if string or null, treat as partnerId
+      : options;
+    
     let query = supabase
       .from('deliverables')
       .select(`
@@ -281,12 +314,17 @@ export const deliverablesService = {
       `)
       .order('created_at', { ascending: false });
 
+    // If specific partnerId requested, filter by it
     if (partnerId) {
       query = query.eq('partner_id', partnerId);
     } else if (partnerId === null) {
       // If partnerId is explicitly null, get global deliverables (partner_id IS NULL)
       query = query.is('partner_id', null);
+    } else if (role === 'admin' && currentUserPartnerId) {
+      // Admin can only see deliverables for their assigned partner
+      query = query.eq('partner_id', currentUserPartnerId);
     }
+    // If role is 'superadmin' or no role provided, return all (subject to RLS)
 
     if (category) {
       query = query.eq('category', category);
@@ -294,7 +332,7 @@ export const deliverablesService = {
 
     const { data, error } = await query;
     if (error) throw error;
-    return data;
+    return data || [];
   },
 
   // Get exhibitor deliverables (global templates)
@@ -376,16 +414,28 @@ export const deliverablesService = {
 // ============================================
 
 export const nominationsService = {
-  // Get all nominations (admin) or by partner
-  getAll: async (partnerId = null) => {
+  // Get all nominations with role-based filtering
+  // If partnerId is provided, only returns nominations for that partner
+  // If role is 'superadmin', returns all nominations
+  // If role is 'admin', returns only nominations for their assigned partner
+  getAll: async (options = {}) => {
+    const { partnerId, role, currentUserPartnerId } = typeof options === 'string' 
+      ? { partnerId: options } // Backward compatibility: if string, treat as partnerId
+      : options;
+    
     let query = supabase
       .from('nominations')
       .select('*')
       .order('created_at', { ascending: false });
 
+    // If specific partnerId requested, filter by it
     if (partnerId) {
       query = query.eq('partner_id', partnerId);
+    } else if (role === 'admin' && currentUserPartnerId) {
+      // Admin can only see nominations for their assigned partner
+      query = query.eq('partner_id', currentUserPartnerId);
     }
+    // If role is 'superadmin' or no role provided, return all (subject to RLS)
 
     const { data, error } = await query;
     if (error) {
@@ -997,20 +1047,31 @@ export const partnerMessagesService = {
     return count || 0;
   },
 
-  // Get unread count for admin (across all partners)
-  getAdminUnreadCount: async () => {
-    const { count, error } = await supabase
+  // Get unread count for admin (across all partners or filtered by assigned partner)
+  getAdminUnreadCount: async (options = {}) => {
+    const { role, currentUserPartnerId } = options;
+    
+    let query = supabase
       .from('partner_messages')
       .select('*', { count: 'exact', head: true })
       .eq('is_read', false);
     
+    // If role is 'admin', filter by their partner_id
+    if (role === 'admin' && currentUserPartnerId) {
+      query = query.eq('partner_id', currentUserPartnerId);
+    }
+    // If role is 'superadmin', return all (subject to RLS)
+    
+    const { count, error } = await query;
     if (error) throw error;
     return count || 0;
   },
 
   // Get partners with unread messages (for admin view)
-  getPartnersWithUnread: async () => {
-    const { data, error } = await supabase
+  getPartnersWithUnread: async (options = {}) => {
+    const { role, currentUserPartnerId } = options;
+    
+    let query = supabase
       .from('partner_messages')
       .select(`
         partner_id,
@@ -1020,6 +1081,13 @@ export const partnerMessagesService = {
       .eq('is_read', false)
       .order('created_at', { ascending: false });
     
+    // If role is 'admin', filter by their partner_id
+    if (role === 'admin' && currentUserPartnerId) {
+      query = query.eq('partner_id', currentUserPartnerId);
+    }
+    // If role is 'superadmin', return all (subject to RLS)
+    
+    const { data, error } = await query;
     if (error) throw error;
     
     // Group by partner_id and count unread

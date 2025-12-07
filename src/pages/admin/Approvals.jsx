@@ -47,29 +47,43 @@ export default function Approvals() {
   const [showActionDialog, setShowActionDialog] = useState(false);
 
   // Fetch all partners for name mapping
+  const { role, partnerId } = useAuth();
+
   const { data: allPartners = [] } = useQuery({
-    queryKey: ['allPartners'],
+    queryKey: ['allPartners', role, partnerId],
     queryFn: async () => {
-      return partnersService.getAll();
+      return partnersService.getAll({
+        role: role || undefined,
+        currentUserPartnerId: partnerId || undefined,
+      });
     },
     enabled: isAdmin,
   });
 
   // Fetch pending deliverables - check submissions with status 'submitted' or 'pending_review'
   const { data: pendingDeliverables = [], isLoading } = useQuery({
-    queryKey: ['pendingDeliverables'],
+    queryKey: ['pendingDeliverables', role, partnerId],
     queryFn: async () => {
       // Get all submissions with pending status
       const submissions = await partnerSubmissionsService.getAll();
-      const pendingSubmissions = submissions.filter(s => 
+      // Filter by role if admin
+      let filteredSubmissions = submissions;
+      if (role === 'admin' && partnerId) {
+        filteredSubmissions = submissions.filter(s => s.partner_id === partnerId);
+      }
+      
+      const pendingSubmissions = filteredSubmissions.filter(s => 
         s.status === 'submitted' || s.status === 'pending_review'
       );
       
       // Get unique deliverable IDs from pending submissions
       const deliverableIds = [...new Set(pendingSubmissions.map(s => s.deliverable_id))];
       
-      // Fetch deliverables
-      const all = await deliverablesService.getAll();
+      // Fetch deliverables (role-based filtering)
+      const all = await deliverablesService.getAll({
+        role: role || undefined,
+        currentUserPartnerId: partnerId || undefined,
+      });
       return all.filter(d => deliverableIds.includes(d.id));
     },
     enabled: isAdmin,

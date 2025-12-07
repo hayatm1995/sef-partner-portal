@@ -46,20 +46,20 @@ export default function AdminDashboardMetrics({
   isSuperAdmin = false,
   assignedPartners = [],
 }: AdminDashboardMetricsProps) {
-  const { user, role } = useAuth();
+  const { user, role, partnerId } = useAuth();
 
-  // Determine if we should filter by assigned partners
-  const shouldFilterByAssigned = !isSuperAdmin && assignedPartners.length > 0;
+  // Get current user's partner_id for role-based filtering
+  const currentUserPartnerId = partnerId || (assignedPartners.length > 0 ? assignedPartners[0] : null);
 
-  // Fetch all partners (filtered by assigned if admin)
+  // Fetch all partners (filtered by role)
   const { data: allPartners = [], isLoading: loadingPartners } = useQuery({
-    queryKey: ['dashboardPartners', isSuperAdmin, assignedPartners],
+    queryKey: ['dashboardPartners', role, currentUserPartnerId],
     queryFn: async () => {
       try {
-        const partners = await partnersService.getAll();
-        if (shouldFilterByAssigned) {
-          return partners.filter(p => assignedPartners.includes(p.id));
-        }
+        const partners = await partnersService.getAll({
+          role: role || undefined,
+          currentUserPartnerId: currentUserPartnerId || undefined,
+        });
         return partners || [];
       } catch (error) {
         console.error('[AdminDashboardMetrics] Error fetching partners:', error);
@@ -70,15 +70,15 @@ export default function AdminDashboardMetrics({
     retry: 1,
   });
 
-  // Fetch all deliverables (filtered by assigned partners if admin)
+  // Fetch all deliverables (filtered by role)
   const { data: allDeliverables = [], isLoading: loadingDeliverables } = useQuery({
-    queryKey: ['dashboardDeliverables', isSuperAdmin, assignedPartners],
+    queryKey: ['dashboardDeliverables', role, currentUserPartnerId],
     queryFn: async () => {
       try {
-        const deliverables = await deliverablesService.getAll();
-        if (shouldFilterByAssigned) {
-          return deliverables.filter(d => assignedPartners.includes(d.partner_id));
-        }
+        const deliverables = await deliverablesService.getAll({
+          role: role || undefined,
+          currentUserPartnerId: currentUserPartnerId || undefined,
+        });
         return deliverables || [];
       } catch (error) {
         console.error('[AdminDashboardMetrics] Error fetching deliverables:', error);
@@ -91,12 +91,13 @@ export default function AdminDashboardMetrics({
 
   // Fetch all submissions (filtered by assigned partners if admin)
   const { data: allSubmissions = [], isLoading: loadingSubmissions } = useQuery({
-    queryKey: ['dashboardSubmissions', isSuperAdmin, assignedPartners],
+    queryKey: ['dashboardSubmissions', role, currentUserPartnerId],
     queryFn: async () => {
       try {
         const submissions = await partnerSubmissionsService.getAll();
-        if (shouldFilterByAssigned) {
-          return submissions.filter(s => assignedPartners.includes(s.partner_id));
+        // Filter by role if admin
+        if (role === 'admin' && currentUserPartnerId) {
+          return submissions.filter(s => s.partner_id === currentUserPartnerId);
         }
         return submissions || [];
       } catch (error) {
@@ -108,16 +109,16 @@ export default function AdminDashboardMetrics({
     retry: 1,
   });
 
-  // Fetch all nominations (filtered by assigned partners if admin)
+  // Fetch all nominations (filtered by role)
   const { data: allNominations = [], isLoading: loadingNominations } = useQuery({
-    queryKey: ['dashboardNominations', isSuperAdmin, assignedPartners],
+    queryKey: ['dashboardNominations', role, currentUserPartnerId],
     queryFn: async () => {
       try {
-        const nominations = await nominationsService.getAll();
-        if (shouldFilterByAssigned) {
-          return nominations.filter(n => assignedPartners.includes(n.partner_id));
-        }
-        return nominations;
+        const nominations = await nominationsService.getAll({
+          role: role || undefined,
+          currentUserPartnerId: currentUserPartnerId || undefined,
+        });
+        return nominations || [];
       } catch (error) {
         console.error('[AdminDashboardMetrics] Error fetching nominations:', error);
         return []; // Return empty array on error (non-critical)
@@ -126,14 +127,15 @@ export default function AdminDashboardMetrics({
     staleTime: 30000,
   });
 
-  // Fetch all partner progress (filtered by assigned partners if admin)
+  // Fetch all partner progress (filtered by role)
   const { data: allProgress = [], isLoading: loadingProgress } = useQuery({
-    queryKey: ['dashboardProgress', isSuperAdmin, assignedPartners],
+    queryKey: ['dashboardProgress', role, currentUserPartnerId],
     queryFn: async () => {
       try {
         const progress = await partnerProgressService.getAll();
-        if (shouldFilterByAssigned) {
-          return progress.filter(p => assignedPartners.includes(p.partner_id));
+        // Filter by role if admin
+        if (role === 'admin' && currentUserPartnerId) {
+          return progress.filter(p => p.partner_id === currentUserPartnerId);
         }
         return progress || [];
       } catch (error) {

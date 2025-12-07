@@ -57,21 +57,29 @@ export default function AdminPartners() {
     }
   }, [user, isAdmin, navigate]);
 
-  // Fetch all partners
+  const { role, partnerId } = useAuth();
+
+  // Fetch all partners (role-based filtering)
   const { data: partners = [], isLoading: partnersLoading } = useQuery({
-    queryKey: ['adminPartners'],
+    queryKey: ['adminPartners', role, partnerId],
     queryFn: async () => {
-      return partnersService.getAll();
+      return partnersService.getAll({
+        role: role || undefined,
+        currentUserPartnerId: partnerId || undefined,
+      });
     },
     enabled: isAdmin,
   });
 
-  // Fetch all partner users to calculate stats
+  // Fetch all partner users to calculate stats (role-based filtering)
   const { data: allPartnerUsers = [] } = useQuery({
-    queryKey: ['allPartnerUsers'],
+    queryKey: ['allPartnerUsers', role, partnerId],
     queryFn: async () => {
       const { partnerUsersService } = await import('@/services/supabaseService');
-      const partners = await partnersService.getAll();
+      const partners = await partnersService.getAll({
+        role: role || undefined,
+        currentUserPartnerId: partnerId || undefined,
+      });
       const allUsers = [];
       for (const p of partners) {
         const users = await partnerUsersService.getByPartnerId(p.id);
@@ -82,20 +90,26 @@ export default function AdminPartners() {
     enabled: isAdmin,
   });
 
-  // Fetch all deliverables for progress calculation
+  // Fetch all deliverables for progress calculation (role-based filtering)
   const { data: allDeliverables = [] } = useQuery({
-    queryKey: ['allDeliverables'],
+    queryKey: ['allDeliverables', role, partnerId],
     queryFn: async () => {
-      return deliverablesService.getAll();
+      return deliverablesService.getAll({
+        role: role || undefined,
+        currentUserPartnerId: partnerId || undefined,
+      });
     },
     enabled: isAdmin,
   });
 
-  // Fetch all nominations for progress calculation
+  // Fetch all nominations for progress calculation (role-based filtering)
   const { data: allNominations = [] } = useQuery({
-    queryKey: ['allNominations'],
+    queryKey: ['allNominations', role, partnerId],
     queryFn: async () => {
-      return nominationsService.getAll();
+      return nominationsService.getAll({
+        role: role || undefined,
+        currentUserPartnerId: partnerId || undefined,
+      });
     },
     enabled: isAdmin,
   });

@@ -105,13 +105,18 @@ const formatNumber = (num) => {
 function AdminFullDashboard() {
   const { user } = useAuth();
 
+  const { role, partnerId } = useAuth();
+
   // Admin-specific data
   const { data: allPartners = [], isLoading: loadingPartners, error: partnersError } = useQuery({
-    queryKey: ['allPartners'],
+    queryKey: ['allPartners', role, partnerId],
     queryFn: async () => {
       try {
         console.log('[AdminFullDashboard] Fetching all partners...');
-        const result = await partnersService.getAll();
+        const result = await partnersService.getAll({
+          role: role || undefined,
+          currentUserPartnerId: partnerId || undefined,
+        });
         console.log('[AdminFullDashboard] Fetched partners:', result?.length || 0);
         return result || [];
       } catch (error) {
@@ -125,11 +130,14 @@ function AdminFullDashboard() {
   });
 
   const { data: allDeliverables = [], isLoading: loadingDeliverables, error: deliverablesError } = useQuery({
-    queryKey: ['allDeliverables'],
+    queryKey: ['allDeliverables', role, partnerId],
     queryFn: async () => {
       try {
         console.log('[AdminFullDashboard] Fetching all deliverables...');
-        const result = await deliverablesService.getAll();
+        const result = await deliverablesService.getAll({
+          role: role || undefined,
+          currentUserPartnerId: partnerId || undefined,
+        });
         console.log('[AdminFullDashboard] Fetched deliverables:', result?.length || 0);
         return result || [];
       } catch (error) {
@@ -143,11 +151,14 @@ function AdminFullDashboard() {
   });
 
   const { data: allNominations = [], isLoading: loadingNominations, error: nominationsError } = useQuery({
-    queryKey: ['allNominations'],
+    queryKey: ['allNominations', role, partnerId],
     queryFn: async () => {
       try {
         console.log('[AdminFullDashboard] Fetching all nominations...');
-        const result = await nominationsService.getAll();
+        const result = await nominationsService.getAll({
+          role: role || undefined,
+          currentUserPartnerId: partnerId || undefined,
+        });
         console.log('[AdminFullDashboard] Fetched nominations:', result?.length || 0);
         return result || [];
       } catch (error) {
