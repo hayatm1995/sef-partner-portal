@@ -78,7 +78,7 @@ import { useAuth } from "@/contexts/AuthContext";
 export default function Layout({ children, currentPageName }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, partner, partnerUser, loading: authLoading, loginAsTestUser, viewMode, switchViewMode } = useAuth();
+  const { user, partner, partnerUser, role, loading: authLoading, loginAsTestUser, viewMode, switchViewMode } = useAuth();
   const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
   const [pageStartTime, setPageStartTime] = useState(Date.now());
   const [showSplash, setShowSplash] = useState(true);
@@ -134,7 +134,7 @@ export default function Layout({ children, currentPageName }) {
       
       return partners;
     },
-    enabled: !!user && (['admin', 'sef_admin', 'superadmin'].includes(user.role) || user.is_super_admin || isDevModeLayout),
+    enabled: !!user && isSuperAdmin,
   });
 
   // Get all partner users (for admin view)
@@ -150,7 +150,7 @@ export default function Layout({ children, currentPageName }) {
       }
       return allUsers;
     },
-    enabled: !!user && (['admin', 'sef_admin', 'superadmin'].includes(user.role) || user.is_super_admin),
+    enabled: !!user && isSuperAdmin,
   });
 
   const effectivePartnerId = (() => {
@@ -162,19 +162,17 @@ export default function Layout({ children, currentPageName }) {
     return user?.partner_id;
   })();
 
-  // RESTORED: Proper Role Logic
-  const userRole = user?.role || 'viewer';
-  const actualIsSuperAdmin = user?.is_super_admin || userRole === 'superadmin' || userRole === 'sef_admin';
-  const actualIsAdmin = user?.is_admin || actualIsSuperAdmin || userRole === 'admin';
-  const actualIsPartner = user?.is_partner || userRole === 'partner';
+  // STRICT ROLE LOGIC - Use role from AuthContext (already resolved from database)
+  // Get role from context - this is the source of truth
+  const userRole = role || user?.role;
   
-  // Apply viewMode to determine active role
-  let isAdmin = actualIsAdmin;
-  let isSuperAdmin = actualIsSuperAdmin;
+  // STRICT: Only 'superadmin' or 'partner' - no fallback behavior
+  const isSuperAdmin = userRole === 'superadmin';
+  const isPartner = userRole === 'partner';
   
-  if (viewMode === 'partner' && user?.partner_id) {
-    isAdmin = false;
-    isSuperAdmin = false;
+  // If role is not valid, don't show any sidebar
+  if (!isSuperAdmin && !isPartner) {
+    console.error('[Layout] Invalid role:', userRole);
   }
   
   const viewingAsPartnerId = effectivePartnerId !== user?.partner_id ? effectivePartnerId : null;
@@ -336,7 +334,7 @@ export default function Layout({ children, currentPageName }) {
       const { partnerMessagesService } = await import('@/services/supabaseService');
       return partnerMessagesService.getUnreadCount(currentPartner.id);
     },
-    enabled: !!currentPartner?.id && !isAdmin,
+    enabled: !!currentPartner?.id && isPartner,
   });
 
   // Get unread message count for admin
@@ -346,7 +344,7 @@ export default function Layout({ children, currentPageName }) {
       const { partnerMessagesService } = await import('@/services/supabaseService');
       return partnerMessagesService.getAdminUnreadCount();
     },
-    enabled: isAdmin,
+    enabled: isSuperAdmin,
     refetchInterval: 30000,
   });
 
@@ -358,7 +356,7 @@ export default function Layout({ children, currentPageName }) {
       const { supportService } = await import('@/services/supportService');
       return supportService.getUnreadCount(currentPartner.id, 'partner');
     },
-    enabled: !!currentPartner?.id && !isAdmin,
+    enabled: !!currentPartner?.id && isPartner,
     refetchInterval: 30000,
   });
 
@@ -370,7 +368,7 @@ export default function Layout({ children, currentPageName }) {
       const partners = await supportService.getPartnersWithUnread();
       return partners.reduce((sum, p) => sum + p.unread_count, 0);
     },
-    enabled: isAdmin,
+    enabled: isSuperAdmin,
     refetchInterval: 30000,
   });
 
@@ -567,11 +565,9 @@ export default function Layout({ children, currentPageName }) {
   const resourcesItems = [];
   const accountItems = [];
 
-  // Show partner navigation only if:
-  // 1. User is NOT an admin (is a partner user), OR
-  // 2. Admin is viewing as a partner (viewingAsPartnerId exists)
-  // 3. NOT in Admin mode (unless viewing as partner)
-  const shouldShowPartnerNav = !isAdmin || !!viewingAsPartnerId;
+  // STRICT: Show partner navigation ONLY if user is a partner
+  // Superadmins can view as partner, but that's handled separately
+  const shouldShowPartnerNav = isPartner || (isSuperAdmin && !!viewingAsPartnerId);
   
   // Pass isAdmin && viewingAsPartnerId as isAdminViewing flag
   const filteredSections = shouldShowPartnerNav
@@ -603,8 +599,8 @@ export default function Layout({ children, currentPageName }) {
     });
   }
 
-  // Show Admin nav if isAdmin and NOT viewing as partner
-  const adminNavItems = (isAdmin && !viewingAsPartnerId) ? adminBaseNavItems : [];
+  // STRICT: Show Admin nav ONLY if user is superadmin and NOT viewing as partner
+  const adminNavItems = (isSuperAdmin && !viewingAsPartnerId) ? adminBaseNavItems : [];
 
   const { logout } = useAuth();
   
@@ -666,7 +662,7 @@ export default function Layout({ children, currentPageName }) {
                 userId={user?.id}
               />
             )}
-            {!isAdmin && currentPartner && (
+            {isPartner && currentPartner && (
               <PartnerInfoCard 
                 partner={currentPartner}
                 isViewingAs={false}
@@ -674,8 +670,8 @@ export default function Layout({ children, currentPageName }) {
               />
             )}
 
-            {/* Admin Nav Items */}
-            {adminNavItems.length > 0 && (
+            {/* Admin Nav Items - STRICT: Only show for superadmin */}
+            {isSuperAdmin && adminNavItems.length > 0 && (
               <SidebarGroup>
                 <SidebarGroupLabel>Admin</SidebarGroupLabel>
                 <SidebarGroupContent>
@@ -729,8 +725,8 @@ export default function Layout({ children, currentPageName }) {
               </SidebarGroup>
             )}
 
-            {/* Admin View As Partner Dropdown */}
-            {isAdmin && (
+            {/* Admin View As Partner Dropdown - STRICT: Only for superadmin */}
+            {isSuperAdmin && (
               <div className="px-4 py-3 border-b border-gray-200/60">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -869,8 +865,8 @@ export default function Layout({ children, currentPageName }) {
               <div className="flex items-center gap-4 ml-auto">
                 <GlobalNotificationBell partnerId={currentPartner?.id} />
                 
-                {/* Role Switch Dropdown - only show if user can be both admin and partner */}
-                {actualIsAdmin && user?.partner_id && (
+                {/* Role Switch Dropdown - only show if user is superadmin */}
+                {isSuperAdmin && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" className="border-orange-200 hover:bg-orange-50 text-orange-700">

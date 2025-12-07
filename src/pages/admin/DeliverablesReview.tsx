@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { partnersService } from "@/services/supabaseService";
 
 export default function DeliverablesReview() {
-  const { user } = useAuth();
+  const { user, role, loading } = useAuth();
   const queryClient = useQueryClient();
   
   const [statusFilter, setStatusFilter] = useState<string>("submitted");
@@ -23,20 +23,30 @@ export default function DeliverablesReview() {
   const [selectedDeliverable, setSelectedDeliverable] = useState<Deliverable | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin' || user?.role === 'sef_admin';
+  // STRICT: Wait for role to load
+  if (loading || !role) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
+      </div>
+    );
+  }
+
+  // STRICT: Only superadmin can access
+  const isSuperAdmin = role === 'superadmin';
 
   // Fetch partners for filter
   const { data: partners = [] } = useQuery({
     queryKey: ["partners"],
     queryFn: () => partnersService.getAll(),
-    enabled: isAdmin,
+    enabled: isSuperAdmin,
   });
 
   // Fetch all deliverables
   const { data: allDeliverables = [], isLoading } = useQuery({
     queryKey: ["adminDeliverables"],
     queryFn: () => deliverablesService.getAllDeliverables(),
-    enabled: isAdmin,
+    enabled: isSuperAdmin,
   });
 
   // Filter logic
@@ -93,13 +103,14 @@ export default function DeliverablesReview() {
     }
   };
 
-  if (!isAdmin) {
+  // STRICT: Only superadmin can access
+  if (!isSuperAdmin) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <ShieldCheck className="w-12 h-12 mx-auto text-gray-300 mb-4" />
           <h2 className="text-xl font-semibold text-gray-900">Access Denied</h2>
-          <p className="text-gray-500">You do not have permission to view this page.</p>
+          <p className="text-gray-500">Superadmin access required.</p>
         </div>
       </div>
     );

@@ -30,9 +30,9 @@ export default function InvitePartner() {
     );
   }
 
-  // Check if user is admin - use role from context (already resolved from database)
-  const userRole = role || user?.role || 'partner';
-  const isAdmin = userRole === 'admin' || userRole === 'superadmin' || userRole === 'sef_admin' || user?.is_super_admin;
+  // STRICT: Check if user is superadmin - use role from context (already resolved from database)
+  const userRole = role || user?.role;
+  const isSuperAdmin = userRole === 'superadmin';
 
   const invitePartnerMutation = useMutation({
     mutationFn: async (data) => {
@@ -42,7 +42,7 @@ export default function InvitePartner() {
         data: { session }
       } = await supabase.auth.getSession();
 
-      const { data, error } = await supabase.functions.invoke('invite-partner', {
+      const { data: result, error } = await supabase.functions.invoke('invite-partner', {
         body: { name, email },
         headers: {
           Authorization: `Bearer ${session?.access_token}`
@@ -57,7 +57,7 @@ export default function InvitePartner() {
         toast.success('Invite sent!');
       }
 
-      return data;
+      return result;
     },
     onSuccess: () => {
       // Reset form
@@ -96,12 +96,13 @@ export default function InvitePartner() {
     });
   };
 
-  if (!isAdmin) {
+  // STRICT: Only superadmin can access
+  if (!isSuperAdmin) {
     return (
       <div className="p-4 md:p-8 max-w-7xl mx-auto">
         <Card>
           <CardContent className="p-8 text-center">
-            <p className="text-gray-600">You do not have permission to access this page.</p>
+            <p className="text-gray-600">Access denied. Superadmin access required.</p>
           </CardContent>
         </Card>
       </div>

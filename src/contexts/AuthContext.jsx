@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
-import { SUPERADMIN } from '@/constants/users';
+import { getUserRole, getUserRoleSync } from '@/utils/auth';
 
 const AuthContext = createContext(undefined);
 
@@ -15,7 +15,11 @@ export const AuthProvider = ({ children }) => {
         const { data } = await supabase.auth.getSession();
         setSession(data.session);
         if (data.session?.user) {
-          await resolveRole(data.session.user);
+          // Use getUserRole helper that checks both metadata and database
+          const resolvedRole = await getUserRole(data.session.user);
+          setRole(resolvedRole);
+        } else {
+          setRole(null);
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
@@ -31,7 +35,9 @@ export const AuthProvider = ({ children }) => {
     } = supabase.auth.onAuthStateChange(async (_evt, session) => {
       setSession(session);
       if (session?.user) {
-        await resolveRole(session.user);
+        // Use getUserRole helper that checks both metadata and database
+        const resolvedRole = await getUserRole(session.user);
+        setRole(resolvedRole);
       } else {
         setRole(null);
       }
@@ -39,38 +45,6 @@ export const AuthProvider = ({ children }) => {
 
     return () => subscription.unsubscribe();
   }, []);
-
-  const resolveRole = async (user) => {
-    // 1. Check for Superadmin Override (Hardcoded)
-    if (
-      user.id === SUPERADMIN.uid ||
-      user.email?.toLowerCase() === SUPERADMIN.email.toLowerCase()
-    ) {
-      console.log('[AUTH] Superadmin override');
-      setRole('superadmin');
-      return;
-    }
-
-    // 2. Check app_metadata (secure, set by admin functions)
-    const appRole = user.app_metadata?.role;
-    if (appRole) {
-      console.log('[AUTH] Role from app_metadata:', appRole);
-      setRole(appRole);
-      return;
-    }
-
-    // 3. Check user_metadata (fallback)
-    const userRole = user.user_metadata?.role;
-    if (userRole) {
-       console.log('[AUTH] Role from user_metadata:', userRole);
-       setRole(userRole);
-       return;
-    }
-    
-    // 4. Default to partner
-    console.log('[AUTH] Defaulting to partner role');
-    setRole('partner');
-  };
 
   const login = async (email, password) => {
     try {
@@ -80,7 +54,8 @@ export const AuthProvider = ({ children }) => {
       });
       
       if (data?.session?.user) {
-        await resolveRole(data.session.user);
+        const resolvedRole = await getUserRole(data.session.user);
+        setRole(resolvedRole);
       }
       
       return { data, error };
@@ -145,7 +120,8 @@ export const AuthProvider = ({ children }) => {
     };
     
     setSession({ user: testUser });
-    await resolveRole(testUser);
+    const resolvedRole = await getUserRole(testUser);
+    setRole(resolvedRole);
     
     return { data: { user: testUser }, error: null };
   };

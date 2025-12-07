@@ -294,10 +294,11 @@ function isPartner(user) {
 function PagesContent() {
     const location = useLocation();
     const currentPage = _getCurrentPage(location.pathname);
-    const { user, session, loading } = useAuth();
+    const { user, session, role, loading } = useAuth();
     
-    // Show loading state
-    if (loading) {
+    // CRITICAL: Show loading state until role is resolved
+    // Don't render protected routes until we know the user's role
+    if (loading || (session && !role)) {
         return (
             <div className="min-h-screen flex items-center justify-center">
                 <div className="text-center">
@@ -318,13 +319,13 @@ function PagesContent() {
         );
     }
     
-    // Determine user role type
-    const userIsSuperadmin = isSuperadmin(user);
-    const userIsAdmin = isAdmin(user);
-    const userIsPartner = isPartner(user);
+    // STRICT ROLE CHECKING - No fallback behavior
+    // Use resolved role from context (already checked against database)
+    const userRole = role;
     
-    // If no valid role, show NoPartnerProfileFound
-    if (!userIsSuperadmin && !userIsAdmin && !userIsPartner) {
+    // Validate role is one of our allowed values
+    if (!userRole || !['superadmin', 'partner'].includes(userRole)) {
+        console.error('[PagesContent] Invalid role:', userRole);
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-gray-50 to-stone-50">
                 <NoPartnerProfileFound userEmail={user?.email} />
@@ -332,20 +333,29 @@ function PagesContent() {
         );
     }
     
+    // Strict role checks - no fallback
+    const userIsSuperadmin = userRole === 'superadmin';
+    const userIsPartner = userRole === 'partner';
+    
+    // If role is invalid, redirect to login
+    if (!userIsSuperadmin && !userIsPartner) {
+        return <Navigate to="/Login" replace />;
+    }
+    
     return (
         <AuthGuard>
             <Layout currentPageName={currentPage}>
                 <Routes>
-                    {/* Root redirect - based on role */}
+                    {/* Root redirect - based on STRICT role */}
                     <Route path="/" element={
-                        userIsSuperadmin || userIsAdmin 
+                        userIsSuperadmin
                             ? <Navigate to="/admin/dashboard" replace /> 
                             : <Navigate to="/partner/profile" replace />
                     } />
                     <Route path="/Unauthorized" element={<Unauthorized />} />
                     
-                    {/* Partner Routes - accessible to partners, and admins can view as partner */}
-                    {(userIsPartner || userIsAdmin || userIsSuperadmin) && (
+                    {/* Partner Routes - ONLY accessible to partners */}
+                    {userIsPartner && (
                         <>
                             {/* Standard Partner Dashboard */}
                             <Route path="/Dashboard" element={<Dashboard />} />
@@ -366,8 +376,8 @@ function PagesContent() {
                         </>
                     )}
                     
-                    {/* Shared Routes - accessible to both admin and partner */}
-                    {(userIsPartner || userIsAdmin || userIsSuperadmin) && (
+                    {/* Shared Routes - accessible to both superadmin and partner */}
+                    {(userIsPartner || userIsSuperadmin) && (
                         <>
                             <Route path="/Messages" element={<Messages />} />
                             <Route path="/support-chat" element={<PartnerMessages />} />
@@ -399,8 +409,8 @@ function PagesContent() {
                         </>
                     )}
                     
-                    {/* Admin Routes - require admin or superadmin role */}
-                    {(userIsAdmin || userIsSuperadmin) && (
+                    {/* Admin Routes - STRICT: ONLY accessible to superadmin */}
+                    {userIsSuperadmin && (
                         <>
                             {/* Admin Dashboard Route */}
                             <Route path="/admin/dashboard" element={<Dashboard />} />
@@ -490,9 +500,11 @@ function PagesContent() {
                     
                     <Route path="/PageNotFound" element={<PageNotFound />} />
                     <Route path="/Login" element={
-                        userIsSuperadmin || userIsAdmin 
+                        userIsSuperadmin
                             ? <Navigate to="/admin/dashboard" replace /> 
-                            : <Navigate to="/partner/profile" replace />
+                            : userIsPartner
+                            ? <Navigate to="/partner/profile" replace />
+                            : <Login />
                     } />
                 </Routes>
             </Layout>

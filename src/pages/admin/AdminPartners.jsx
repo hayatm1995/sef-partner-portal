@@ -39,8 +39,9 @@ export default function AdminPartners() {
   const [searchQuery, setSearchQuery] = useState("");
   const [partnerToDelete, setPartnerToDelete] = useState(null);
 
-  // Check if user is superadmin
-  const isSuperAdmin = user?.role === 'sef_admin' || user?.is_super_admin;
+  // STRICT: Check if user is superadmin - use role from context
+  const { role } = useAuth();
+  const isSuperAdmin = role === 'superadmin';
 
   // Redirect if not superadmin
   React.useEffect(() => {

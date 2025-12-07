@@ -5,17 +5,19 @@ import { Loader2 } from 'lucide-react';
 
 /**
  * AuthGuard component that protects routes requiring authentication
+ * CRITICAL: Waits for role resolution before rendering protected content
  * Shows loading state while checking auth, redirects to login if not authenticated
  */
 export default function AuthGuard({ children }) {
-  const { user, loading } = useAuth();
+  const { user, session, role, loading } = useAuth();
   const location = useLocation();
 
-  // Show loading spinner while checking authentication (but with timeout)
+  // Show loading spinner while checking authentication and role resolution
+  // CRITICAL: Don't render protected content until role is loaded
   const [showTimeout, setShowTimeout] = useState(false);
   
   useEffect(() => {
-    if (loading) {
+    if (loading || (session && !role)) {
       const timer = setTimeout(() => {
         setShowTimeout(true);
       }, 5000); // Show timeout message after 5 seconds
@@ -24,10 +26,10 @@ export default function AuthGuard({ children }) {
     } else {
       setShowTimeout(false);
     }
-  }, [loading]);
+  }, [loading, session, role]);
   
-  // EMERGENCY DEBUG: Skip loading check
-  if (false && loading) {
+  // Wait for role resolution - CRITICAL for production
+  if (loading || (session && !role)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-gray-50 to-stone-50">
         <div className="text-center">
@@ -43,28 +45,13 @@ export default function AuthGuard({ children }) {
     );
   }
 
-  // EMERGENCY DEBUG: Skip auth check - always allow access
-  if (false && !user && location.pathname !== '/Login') {
-    console.log('AuthGuard: No user, redirecting to login');
+  // Redirect to login if not authenticated (except for login page itself)
+  if (!session && !user && location.pathname !== '/Login') {
+    console.log('[AuthGuard] No user, redirecting to login');
     return <Navigate to="/Login" state={{ from: location }} replace />;
   }
 
-  // Allow access to login page without auth
-  // EMERGENCY DEBUG: Disable redirects temporarily
-  if (location.pathname === '/Login' && user) {
-    console.log('🔧 DEBUG MODE: Skipping login redirect');
-    // Temporarily disabled redirect
-    // return <Navigate to="/superadmin/control-room" replace />;
-  }
-
-  // EMERGENCY DEBUG: Disable route protection temporarily
-  if (user) {
-    console.log('🔧 DEBUG MODE: Route protection disabled, allowing all routes');
-    // Temporarily disabled route protection
-  }
-
-  // Render protected content
-  console.log('AuthGuard: Rendering protected content for user:', user?.email);
+  // Render protected content - role is now guaranteed to be loaded
   return <>{children}</>;
 }
 

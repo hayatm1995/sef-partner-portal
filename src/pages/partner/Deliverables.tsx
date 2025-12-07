@@ -10,9 +10,31 @@ import { Loader2, FileText, Upload, Eye, AlertCircle } from "lucide-react";
 import UploadModal from "@/components/deliverables/UploadModal";
 
 export default function PartnerDeliverables() {
-  const { user, partner } = useAuth();
+  const { user, partner, role, loading } = useAuth();
   const [selectedDeliverable, setSelectedDeliverable] = useState<Deliverable | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+
+  // STRICT: Wait for role to load
+  if (loading || !role) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
+      </div>
+    );
+  }
+
+  // STRICT: Only partners can access
+  if (role !== 'partner') {
+    return (
+      <div className="p-8 max-w-7xl mx-auto">
+        <Card>
+          <CardContent className="p-8 text-center">
+            <p className="text-gray-600">Access denied. Partner access required.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   // Ensure we have a partner ID
   const partnerId = partner?.id;
