@@ -59,13 +59,15 @@ export default function Approvals() {
     queryKey: ['pendingDeliverables'],
     queryFn: async () => {
       const all = await deliverablesService.getAll();
-      // Filter for pending status
-      return all.filter(d => 
-        d.status === 'submitted' || 
-        d.status === 'pending_review' || 
-        d.status === 'Pending Review' ||
-        d.status?.toLowerCase().includes('pending')
-      );
+      // Filter for pending/submitted status
+      return all.filter(d => {
+        const status = d.status?.toLowerCase() || '';
+        return status === 'submitted' || 
+               status === 'pending_review' || 
+               status === 'pending review' ||
+               status.includes('pending') ||
+               status === 'pending';
+      });
     },
     enabled: isAdmin,
   });
@@ -125,6 +127,10 @@ export default function Approvals() {
         updated_at: new Date().toISOString()
       });
 
+      // Invalidate progress queries to refresh progress calculation
+      queryClient.invalidateQueries({ queryKey: ['partnerProgress'] });
+      queryClient.invalidateQueries({ queryKey: ['allPartnerProgress'] });
+
       // Update submission status if exists
       if (submissionId) {
         await partnerSubmissionsService.update(submissionId, {
@@ -155,6 +161,8 @@ export default function Approvals() {
       queryClient.invalidateQueries({ queryKey: ['pendingDeliverables'] });
       queryClient.invalidateQueries({ queryKey: ['allDeliverables'] });
       queryClient.invalidateQueries({ queryKey: ['allSubmissions'] });
+      queryClient.invalidateQueries({ queryKey: ['partnerProgress'] });
+      queryClient.invalidateQueries({ queryKey: ['allPartnerProgress'] });
       setShowActionDialog(false);
       setSelectedDeliverable(null);
       setComment("");
@@ -178,6 +186,10 @@ export default function Approvals() {
         rejection_reason: reason,
         updated_at: new Date().toISOString()
       });
+
+      // Invalidate progress queries
+      queryClient.invalidateQueries({ queryKey: ['partnerProgress'] });
+      queryClient.invalidateQueries({ queryKey: ['allPartnerProgress'] });
 
       // Update submission status if exists
       if (submissionId) {
@@ -235,6 +247,10 @@ export default function Approvals() {
         updated_at: new Date().toISOString()
       });
 
+      // Invalidate progress queries
+      queryClient.invalidateQueries({ queryKey: ['partnerProgress'] });
+      queryClient.invalidateQueries({ queryKey: ['allPartnerProgress'] });
+
       // Update submission status if exists
       if (submissionId) {
         await partnerSubmissionsService.update(submissionId, {
@@ -267,6 +283,8 @@ export default function Approvals() {
       queryClient.invalidateQueries({ queryKey: ['pendingDeliverables'] });
       queryClient.invalidateQueries({ queryKey: ['allDeliverables'] });
       queryClient.invalidateQueries({ queryKey: ['allSubmissions'] });
+      queryClient.invalidateQueries({ queryKey: ['partnerProgress'] });
+      queryClient.invalidateQueries({ queryKey: ['allPartnerProgress'] });
       setShowActionDialog(false);
       setSelectedDeliverable(null);
       setComment("");

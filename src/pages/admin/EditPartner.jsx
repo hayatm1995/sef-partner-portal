@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Breadcrumbs from "@/components/common/Breadcrumbs";
+import DeliverablesManagement from "@/components/admin/DeliverablesManagement";
 
 // All available portal modules
 const ALL_MODULES = [
@@ -559,34 +560,17 @@ export default function EditPartner() {
 
           {/* Deliverables Tab */}
           <TabsContent value="deliverables">
-            <Card>
-              <CardHeader>
-                <CardTitle>Deliverables</CardTitle>
-                <p className="text-sm text-gray-600 mt-2">
-                  View and manage deliverables for this partner.
-                </p>
-              </CardHeader>
-              <CardContent>
-                {!isNew && id ? (
-                  <div className="space-y-4">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => window.open(`/admin/deliverables-review?partnerId=${id}`, '_blank')}
-                    >
-                      View All Deliverables
-                    </Button>
-                    <p className="text-sm text-gray-500">
-                      Click to view all deliverables and submissions for this partner in a new tab.
-                    </p>
-                  </div>
-                ) : (
+            {!isNew && id ? (
+              <DeliverablesManagement partnerId={id} />
+            ) : (
+              <Card>
+                <CardContent className="p-6 text-center">
                   <p className="text-sm text-gray-500">
-                    Save the partner first to view deliverables.
+                    Save the partner first to manage deliverables.
                   </p>
-                )}
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* Branding Tab */}

@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import DeliverableVersionHistory from "@/components/deliverables/DeliverableVersionHistory";
 import DeliverableComments from "@/components/deliverables/DeliverableComments";
 // File upload handling without react-dropzone dependency
@@ -57,6 +58,8 @@ export default function PartnerDeliverables() {
   const queryClient = useQueryClient();
   const [uploadingDeliverable, setUploadingDeliverable] = useState(null);
   const [uploadFile, setUploadFile] = useState(null);
+  const [uploadUrl, setUploadUrl] = useState("");
+  const [uploadText, setUploadText] = useState("");
   const [uploadNotes, setUploadNotes] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [expandedDeliverable, setExpandedDeliverable] = useState(null);
@@ -126,12 +129,19 @@ export default function PartnerDeliverables() {
   }, [allSubmissions]);
 
   const getStatusConfig = (status) => {
+    const normalizedStatus = status?.toLowerCase();
     const configs = {
       pending: {
         color: "bg-yellow-100 text-yellow-800 border-yellow-200",
         icon: Clock,
         label: "Pending Review",
         badge: "🟡 Pending"
+      },
+      submitted: {
+        color: "bg-blue-100 text-blue-800 border-blue-200",
+        icon: Clock,
+        label: "Submitted",
+        badge: "🔵 Submitted"
       },
       approved: {
         color: "bg-green-100 text-green-800 border-green-200",
@@ -144,9 +154,21 @@ export default function PartnerDeliverables() {
         icon: XCircle,
         label: "Rejected",
         badge: "🔴 Rejected"
+      },
+      revision_required: {
+        color: "bg-orange-100 text-orange-800 border-orange-200",
+        icon: Clock,
+        label: "Revision Required",
+        badge: "🟠 Revision Required"
+      },
+      'revision needed': {
+        color: "bg-orange-100 text-orange-800 border-orange-200",
+        icon: Clock,
+        label: "Revision Required",
+        badge: "🟠 Revision Required"
       }
     };
-    return configs[status] || {
+    return configs[normalizedStatus] || {
       color: "bg-gray-100 text-gray-800 border-gray-200",
       icon: FileText,
       label: "Not Submitted",
@@ -154,48 +176,80 @@ export default function PartnerDeliverables() {
     };
   };
 
-  // File upload mutation
+  // Submission mutation (handles file, url, and text types)
   const uploadMutation = useMutation({
-    mutationFn: async ({ deliverableId, file, notes }) => {
-      if (!partnerId || !deliverableId || !file || !user?.partner_user?.id) {
-        throw new Error("Missing required data for upload");
+    mutationFn: async ({ deliverableId, file, url, text, notes, deliverableType }) => {
+      if (!partnerId || !deliverableId || !user?.partner_user?.id) {
+        throw new Error("Missing required data for submission");
       }
 
-      // Generate unique filename
-      const fileExtension = file.name.split('.').pop();
-      const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExtension}`;
-      const filePath = `deliverables/${partnerId}/${deliverableId}/${uniqueFileName}`;
-
-      // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('deliverables')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false,
-        });
-
-      if (uploadError) {
-        throw uploadError;
-      }
-
-      // Get signed URL for secure access (preferred)
-      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-        .from('deliverables')
-        .createSignedUrl(filePath, 3600); // 1 hour expiry
-
-      // Fallback to public URL if signed URL fails
       let fileUrl = null;
-      if (!signedUrlError && signedUrlData?.signedUrl) {
-        fileUrl = signedUrlData.signedUrl;
-      } else {
-        const { data: publicUrlData } = supabase.storage
-          .from('deliverables')
-          .getPublicUrl(filePath);
-        fileUrl = publicUrlData?.publicUrl;
-      }
+      let fileName = null;
+      let fileSize = null;
 
-      if (!fileUrl) {
-        throw new Error('Failed to get URL for uploaded file.');
+      // Handle different submission types
+      if (deliverableType === 'file') {
+        if (!file) {
+          throw new Error("Please select a file to upload");
+        }
+        // Generate unique filename
+        const fileExtension = file.name.split('.').pop();
+        const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExtension}`;
+        const filePath = `deliverables/${partnerId}/${deliverableId}/${uniqueFileName}`;
+
+        // Upload to Supabase Storage
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('deliverables')
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false,
+          });
+
+        if (uploadError) {
+          throw uploadError;
+        }
+
+        // Get signed URL for secure access (preferred)
+        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+          .from('deliverables')
+          .createSignedUrl(filePath, 3600); // 1 hour expiry
+
+        // Fallback to public URL if signed URL fails
+        if (!signedUrlError && signedUrlData?.signedUrl) {
+          fileUrl = signedUrlData.signedUrl;
+        } else {
+          const { data: publicUrlData } = supabase.storage
+            .from('deliverables')
+            .getPublicUrl(filePath);
+          fileUrl = publicUrlData?.publicUrl;
+        }
+
+        if (!fileUrl) {
+          throw new Error('Failed to get URL for uploaded file.');
+        }
+
+        fileName = file.name;
+        fileSize = file.size;
+      } else if (deliverableType === 'url') {
+        if (!url || !url.trim()) {
+          throw new Error("Please provide a URL");
+        }
+        // Validate URL format
+        try {
+          new URL(url);
+        } catch {
+          throw new Error("Please provide a valid URL");
+        }
+        fileUrl = url.trim();
+        fileName = 'URL Submission';
+      } else if (deliverableType === 'text') {
+        if (!text || !text.trim()) {
+          throw new Error("Please provide text content");
+        }
+        // Store text in notes field or create a text file
+        fileUrl = null; // Text is stored in notes
+        fileName = 'Text Submission';
+        notes = (notes || '') + '\n\n--- Submission Text ---\n' + text;
       }
 
       // Always create a new version (version auto-incremented by database trigger)
@@ -203,12 +257,18 @@ export default function PartnerDeliverables() {
         deliverable_id: deliverableId,
         partner_id: partnerId,
         file_url: fileUrl,
-        file_name: file.name,
-        file_size: file.size,
-        status: 'pending',
+        file_name: fileName,
+        file_size: fileSize,
+        status: 'submitted', // Set status to submitted
         submitted_by: user.partner_user.id,
         uploaded_by: user.partner_user.id,
         notes: notes || null,
+      });
+
+      // Update deliverable status to submitted
+      await deliverablesService.update(deliverableId, {
+        status: 'submitted',
+        updated_at: new Date().toISOString(),
       });
 
       // Notify admins of new upload
@@ -261,15 +321,18 @@ export default function PartnerDeliverables() {
       return submissionRecord;
     },
     onSuccess: (submission) => {
-      toast.success(`File uploaded successfully! Version ${submission.version || 1} - Status: Pending Review.`);
+      toast.success(`Submission successful! Version ${submission.version || 1} - Status: Submitted.`);
       queryClient.invalidateQueries({ queryKey: ['partnerDeliverables'] });
       queryClient.invalidateQueries({ queryKey: ['partnerSubmissions'] });
       queryClient.invalidateQueries({ queryKey: ['submissions'] });
       queryClient.invalidateQueries({ queryKey: ['partnerProgress'] });
       queryClient.invalidateQueries({ queryKey: ['deliverableSubmissions'] });
       queryClient.invalidateQueries({ queryKey: ['deliverableComments'] });
+      queryClient.invalidateQueries({ queryKey: ['pendingDeliverables'] });
       setUploadingDeliverable(null);
       setUploadFile(null);
+      setUploadUrl("");
+      setUploadText("");
       setUploadNotes("");
       setUploadProgress(0);
     },
@@ -283,6 +346,8 @@ export default function PartnerDeliverables() {
   const handleUploadClick = (deliverable) => {
     setUploadingDeliverable(deliverable);
     setUploadFile(null);
+    setUploadUrl("");
+    setUploadText("");
     setUploadNotes("");
     setUploadProgress(0);
   };
@@ -292,15 +357,34 @@ export default function PartnerDeliverables() {
   };
 
   const handleSubmitUpload = () => {
-    if (!uploadFile || !uploadingDeliverable) {
+    if (!uploadingDeliverable) {
+      toast.error("No deliverable selected");
+      return;
+    }
+
+    const deliverableType = uploadingDeliverable.type || 'file';
+    
+    // Validate based on type
+    if (deliverableType === 'file' && !uploadFile) {
       toast.error("Please select a file to upload");
+      return;
+    }
+    if (deliverableType === 'url' && !uploadUrl.trim()) {
+      toast.error("Please provide a URL");
+      return;
+    }
+    if (deliverableType === 'text' && !uploadText.trim()) {
+      toast.error("Please provide text content");
       return;
     }
 
     uploadMutation.mutate({
       deliverableId: uploadingDeliverable.id,
       file: uploadFile,
+      url: uploadUrl,
+      text: uploadText,
       notes: uploadNotes,
+      deliverableType: deliverableType,
     });
   };
 
@@ -430,9 +514,10 @@ export default function PartnerDeliverables() {
                         size="sm"
                         onClick={() => handleUploadClick(deliverable)}
                         className="border-orange-200 hover:bg-orange-50 text-orange-700"
+                        disabled={deliverable.status === 'approved'}
                       >
                         <Upload className="w-4 h-4 mr-2" />
-                        {submissions.length > 0 ? 'Upload New Version' : 'Upload'}
+                        {submissions.length > 0 ? 'Submit New Version' : 'Submit'}
                       </Button>
                     </div>
                   </div>
@@ -482,46 +567,87 @@ export default function PartnerDeliverables() {
           <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
               <DialogTitle>
-                Upload File: {uploadingDeliverable?.title}
+                Submit: {uploadingDeliverable?.name || uploadingDeliverable?.title}
               </DialogTitle>
               <DialogDescription>
-                Upload your submission for this deliverable. Max file size: 10MB.
+                {uploadingDeliverable?.type === 'file' && 'Upload your file submission. Max file size: 10MB.'}
+                {uploadingDeliverable?.type === 'url' && 'Provide the URL for your submission.'}
+                {uploadingDeliverable?.type === 'text' && 'Enter your text submission.'}
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-              <div
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                className="flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-lg cursor-pointer transition-colors border-gray-300 hover:border-gray-400 bg-gray-50"
-              >
-                <input
-                  type="file"
-                  onChange={handleFileInputChange}
-                  className="hidden"
-                  id="file-upload-input"
-                  accept=".png,.jpg,.jpeg,.pdf,.docx,.xlsx"
-                />
-                <label htmlFor="file-upload-input" className="cursor-pointer w-full">
-                  <Upload className="w-12 h-12 text-gray-400 mb-3 mx-auto" />
-                  <p className="text-gray-600 text-center">Click to select file or drag and drop</p>
-                  <p className="text-sm text-gray-500 mt-1 text-center">Max 10MB, PNG, JPG, PDF, DOCX, XLSX</p>
-                </label>
-              </div>
-
-              {uploadFile && (
-                <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-100">
-                  <div className="flex items-center gap-3">
-                    <FileText className="w-5 h-5 text-blue-600" />
-                    <span className="text-sm font-medium text-gray-800">{uploadFile.name}</span>
-                  </div>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    onClick={() => setUploadFile(null)}
-                    disabled={uploadMutation.isPending}
+              {/* File Upload Type */}
+              {uploadingDeliverable?.type === 'file' && (
+                <>
+                  <div
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
+                    className="flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-lg cursor-pointer transition-colors border-gray-300 hover:border-gray-400 bg-gray-50"
                   >
-                    <X className="w-4 h-4 text-gray-500" />
-                  </Button>
+                    <input
+                      type="file"
+                      onChange={handleFileInputChange}
+                      className="hidden"
+                      id="file-upload-input"
+                      accept=".png,.jpg,.jpeg,.pdf,.docx,.xlsx,.doc,.xls,.zip,.rar"
+                    />
+                    <label htmlFor="file-upload-input" className="cursor-pointer w-full">
+                      <Upload className="w-12 h-12 text-gray-400 mb-3 mx-auto" />
+                      <p className="text-gray-600 text-center">Click to select file or drag and drop</p>
+                      <p className="text-sm text-gray-500 mt-1 text-center">Max 10MB, PNG, JPG, PDF, DOCX, XLSX, ZIP, RAR</p>
+                    </label>
+                  </div>
+
+                  {uploadFile && (
+                    <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-100">
+                      <div className="flex items-center gap-3">
+                        <FileText className="w-5 h-5 text-blue-600" />
+                        <span className="text-sm font-medium text-gray-800">{uploadFile.name}</span>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={() => setUploadFile(null)}
+                        disabled={uploadMutation.isPending}
+                      >
+                        <X className="w-4 h-4 text-gray-500" />
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* URL Type */}
+              {uploadingDeliverable?.type === 'url' && (
+                <div className="grid gap-2">
+                  <Label htmlFor="url">URL *</Label>
+                  <Input
+                    id="url"
+                    type="url"
+                    value={uploadUrl}
+                    onChange={(e) => setUploadUrl(e.target.value)}
+                    placeholder="https://example.com/submission"
+                    disabled={uploadMutation.isPending}
+                    required
+                  />
+                  <p className="text-xs text-gray-500">Provide the full URL to your submission</p>
+                </div>
+              )}
+
+              {/* Text Type */}
+              {uploadingDeliverable?.type === 'text' && (
+                <div className="grid gap-2">
+                  <Label htmlFor="text">Text Content *</Label>
+                  <Textarea
+                    id="text"
+                    value={uploadText}
+                    onChange={(e) => setUploadText(e.target.value)}
+                    placeholder="Enter your text submission here..."
+                    rows={8}
+                    disabled={uploadMutation.isPending}
+                    required
+                  />
+                  <p className="text-xs text-gray-500">Enter the text content for this deliverable</p>
                 </div>
               )}
 
@@ -560,18 +686,23 @@ export default function PartnerDeliverables() {
               </Button>
               <Button
                 onClick={handleSubmitUpload}
-                disabled={!uploadFile || uploadMutation.isPending}
+                disabled={
+                  uploadMutation.isPending ||
+                  (uploadingDeliverable?.type === 'file' && !uploadFile) ||
+                  (uploadingDeliverable?.type === 'url' && !uploadUrl.trim()) ||
+                  (uploadingDeliverable?.type === 'text' && !uploadText.trim())
+                }
                 className="bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700"
               >
                 {uploadMutation.isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Uploading...
+                    Submitting...
                   </>
                 ) : (
                   <>
                     <Upload className="mr-2 h-4 w-4" />
-                    Submit Upload
+                    Submit
                   </>
                 )}
               </Button>
