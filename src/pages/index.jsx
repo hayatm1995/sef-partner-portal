@@ -108,6 +108,7 @@ import AdminBoothDetails from "./admin/AdminBoothDetails";
 import AdminControlRoom from "./admin/AdminControlRoom";
 import AdminOperations from "./admin/AdminOperations";
 import PartnerMessages from "@/components/messages/PartnerMessages";
+import ReviewNominations from "./admin/ReviewNominations";
 
 import Login from "./Login";
 import Landing from "./Landing";
@@ -130,6 +131,7 @@ const PAGES = {
     AdminMessages: AdminMessages,
     VIPApprovals: VIPApprovals,
     PartnerMessages: PartnerMessages,
+    ReviewNominations: ReviewNominations,
     
     // Updated Deliverables mapping
     DeliverablesReview: DeliverablesReview,

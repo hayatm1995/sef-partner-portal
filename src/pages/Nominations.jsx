@@ -37,10 +37,15 @@ export default function Nominations() {
         return nominationsService.getAll({
           role: role || undefined,
           currentUserPartnerId: partnerId || undefined,
+          includeHidden: true, // Admins can see hidden
         });
       } else if (currentPartnerId) {
         // Partner viewing their own OR admin viewing as specific partner
-        return nominationsService.getAll({ partnerId: currentPartnerId });
+        // Partners should NOT see hidden nominations
+        return nominationsService.getAll({ 
+          partnerId: currentPartnerId,
+          includeHidden: false, // Partners cannot see hidden
+        });
       }
       return [];
     },

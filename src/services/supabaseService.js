@@ -418,24 +418,39 @@ export const nominationsService = {
   // If partnerId is provided, only returns nominations for that partner
   // If role is 'superadmin', returns all nominations
   // If role is 'admin', returns only nominations for their assigned partner
+  // Partners automatically exclude 'hidden' nominations
   getAll: async (options = {}) => {
-    const { partnerId, role, currentUserPartnerId } = typeof options === 'string' 
+    const { partnerId, role, currentUserPartnerId, includeHidden = false } = typeof options === 'string' 
       ? { partnerId: options } // Backward compatibility: if string, treat as partnerId
       : options;
     
     let query = supabase
       .from('nominations')
-      .select('*')
+      .select(`
+        *,
+        partners (
+          id,
+          name
+        )
+      `)
       .order('created_at', { ascending: false });
 
     // If specific partnerId requested, filter by it
     if (partnerId) {
       query = query.eq('partner_id', partnerId);
+      // Partners should not see hidden nominations
+      if (!includeHidden && role !== 'admin' && role !== 'superadmin') {
+        query = query.neq('status', 'hidden');
+      }
     } else if (role === 'admin' && currentUserPartnerId) {
       // Admin can only see nominations for their assigned partner
       query = query.eq('partner_id', currentUserPartnerId);
     }
     // If role is 'superadmin' or no role provided, return all (subject to RLS)
+    // But exclude hidden for non-admin roles
+    if (!includeHidden && role !== 'admin' && role !== 'superadmin') {
+      query = query.neq('status', 'hidden');
+    }
 
     const { data, error } = await query;
     if (error) {
@@ -519,13 +534,91 @@ export const nominationsService = {
   update: async (id, updates) => {
     const { data, error } = await supabase
       .from('nominations')
-      .update(updates)
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', id)
       .select()
       .single();
     
     if (error) throw error;
     return data;
+  },
+
+  // Update nomination status with logging
+  updateStatus: async (nominationId, newStatus, options = {}) => {
+    const { oldStatus, adminId, reason } = options;
+    
+    // Get current nomination to get old status if not provided
+    let currentNomination;
+    if (!oldStatus) {
+      currentNomination = await nominationsService.getById(nominationId);
+    }
+    const previousStatus = oldStatus || currentNomination?.status || 'Submitted';
+    
+    // Get admin_id from partner_users if not provided
+    let adminUserId = adminId;
+    if (!adminUserId) {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        const { data: partnerUser } = await supabase
+          .from('partner_users')
+          .select('id')
+          .eq('auth_user_id', authUser.id)
+          .single();
+        adminUserId = partnerUser?.id;
+      }
+    }
+    
+    // Update nomination
+    const updateData = {
+      status: newStatus,
+      updated_at: new Date().toISOString()
+    };
+    
+    if (newStatus === 'Rejected' && reason) {
+      updateData.rejection_reason = reason;
+    }
+    
+    if (newStatus === 'hidden' && reason) {
+      updateData.admin_comment = reason;
+    }
+    
+    if (adminUserId) {
+      updateData.reviewed_by = adminUserId;
+    }
+    
+    const { data: updatedNomination, error: updateError } = await supabase
+      .from('nominations')
+      .update(updateData)
+      .eq('id', nominationId)
+      .select()
+      .single();
+    
+    if (updateError) throw updateError;
+    
+    // Log the status change
+    try {
+      const { error: logError } = await supabase
+        .from('nomination_logs')
+        .insert({
+          nomination_id: nominationId,
+          admin_id: adminUserId,
+          old_status: previousStatus,
+          new_status: newStatus,
+          reason: reason || null
+        });
+      
+      if (logError) {
+        console.error('[nominationsService] Error logging status change:', logError);
+        // Don't throw - logging failure shouldn't block the update
+      }
+    } catch (logErr) {
+      console.error('[nominationsService] Error creating log entry:', logErr);
+    }
+    
+    return updatedNomination;
   },
 
   // Delete nomination
