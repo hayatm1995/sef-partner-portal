@@ -68,7 +68,7 @@ export default function SuperAdminPanel() {
       try {
         const result = await partnerUsersService.getAll({
           role: role || undefined,
-          currentUserPartnerId: partnerId || undefined,
+          currentUserAuthId: authUser?.id || undefined,
         });
         console.log('[SuperAdminPanel] Fetched users:', result?.length || 0);
         return result || [];
@@ -135,6 +135,20 @@ export default function SuperAdminPanel() {
     onError: (error) => {
       console.error('Error deleting user:', error);
       toast.error('Failed to delete user: ' + error.message);
+    },
+  });
+
+  const toggleUserDisabledMutation = useMutation({
+    mutationFn: ({ userId, isDisabled }) => {
+      return partnerUsersService.update(userId, { is_disabled: isDisabled });
+    },
+    onSuccess: async (updatedUser, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['allUsers'] });
+      toast.success(`User ${variables.isDisabled ? 'disabled' : 'enabled'} successfully`);
+    },
+    onError: (error) => {
+      console.error('Error toggling user disabled status:', error);
+      toast.error('Failed to update user status: ' + error.message);
     },
   });
 
@@ -332,7 +346,7 @@ export default function SuperAdminPanel() {
                     const isCurrentUser = user.auth_user_id === authUser?.id;
                     const isSuperAdminUser = user.role === 'superadmin';
                     const partnerName = user.partners?.name || 'N/A';
-                    const isDisabled = user.soft_disabled === true;
+                    const isDisabled = user.is_disabled === true;
                     
                     return (
                       <TableRow key={user.id} className={isDisabled ? 'opacity-50' : ''}>
@@ -372,16 +386,12 @@ export default function SuperAdminPanel() {
                                 variant={isDisabled ? "default" : "outline"}
                                 size="sm"
                                 onClick={() => {
-                                  const newStatus = !isDisabled;
-                                  partnerUsersService.update(user.id, { soft_disabled: newStatus })
-                                    .then(() => {
-                                      queryClient.invalidateQueries({ queryKey: ['allUsers'] });
-                                      toast.success(`User ${newStatus ? 'disabled' : 'enabled'} successfully`);
-                                    })
-                                    .catch((error) => {
-                                      toast.error('Failed to update user: ' + error.message);
-                                    });
+                                  toggleUserDisabledMutation.mutate({ 
+                                    userId: user.id, 
+                                    isDisabled: !isDisabled 
+                                  });
                                 }}
+                                disabled={toggleUserDisabledMutation.isPending}
                                 className={isDisabled ? "bg-green-600 hover:bg-green-700" : "border-red-200 text-red-600 hover:bg-red-50"}
                               >
                                 {isDisabled ? 'Enable' : 'Disable'}

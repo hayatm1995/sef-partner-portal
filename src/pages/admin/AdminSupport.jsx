@@ -13,12 +13,13 @@ import MessageInput from '@/components/support/MessageInput';
 import { motion } from 'framer-motion';
 
 export default function AdminSupport() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const queryClient = useQueryClient();
   const [selectedPartnerId, setSelectedPartnerId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin;
+  const isSuperAdmin = role === 'superadmin';
+  const isAdmin = role === 'admin' || isSuperAdmin;
 
   // Fetch all partners with their latest messages
   const { data: partnersWithMessages = [], isLoading: partnersLoading } = useQuery({
@@ -28,10 +29,13 @@ export default function AdminSupport() {
     refetchInterval: 30000,
   });
 
-  // Fetch all partners for search
+  // Fetch all partners for search (superadmin sees all, admin sees only assigned)
   const { data: allPartners = [] } = useQuery({
-    queryKey: ['allPartners'],
-    queryFn: () => partnersService.getAll(),
+    queryKey: ['allPartners', role, user?.id],
+    queryFn: () => partnersService.getAll({
+      role: role || undefined,
+      currentUserAuthId: user?.id || undefined,
+    }),
     enabled: isAdmin,
   });
 

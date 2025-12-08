@@ -48,17 +48,14 @@ export default function AdminDashboardMetrics({
 }: AdminDashboardMetricsProps) {
   const { user, role, partnerId } = useAuth();
 
-  // Get current user's partner_id for role-based filtering
-  const currentUserPartnerId = partnerId || (assignedPartners.length > 0 ? assignedPartners[0] : null);
-
-  // Fetch all partners (filtered by role)
+  // Fetch all partners (filtered by role and admin_partner_map)
   const { data: allPartners = [], isLoading: loadingPartners } = useQuery({
-    queryKey: ['dashboardPartners', role, currentUserPartnerId],
+    queryKey: ['dashboardPartners', role, user?.id],
     queryFn: async () => {
       try {
         const partners = await partnersService.getAll({
           role: role || undefined,
-          currentUserPartnerId: currentUserPartnerId || undefined,
+          currentUserAuthId: user?.id || undefined,
         });
         return partners || [];
       } catch (error) {
@@ -70,14 +67,14 @@ export default function AdminDashboardMetrics({
     retry: 1,
   });
 
-  // Fetch all deliverables (filtered by role)
+  // Fetch all deliverables (filtered by role and admin_partner_map)
   const { data: allDeliverables = [], isLoading: loadingDeliverables } = useQuery({
-    queryKey: ['dashboardDeliverables', role, currentUserPartnerId],
+    queryKey: ['dashboardDeliverables', role, user?.id],
     queryFn: async () => {
       try {
         const deliverables = await deliverablesService.getAll({
           role: role || undefined,
-          currentUserPartnerId: currentUserPartnerId || undefined,
+          currentUserAuthId: user?.id || undefined,
         });
         return deliverables || [];
       } catch (error) {
@@ -91,13 +88,19 @@ export default function AdminDashboardMetrics({
 
   // Fetch all submissions (filtered by assigned partners if admin)
   const { data: allSubmissions = [], isLoading: loadingSubmissions } = useQuery({
-    queryKey: ['dashboardSubmissions', role, currentUserPartnerId],
+    queryKey: ['dashboardSubmissions', role, user?.id],
     queryFn: async () => {
       try {
         const submissions = await partnerSubmissionsService.getAll();
-        // Filter by role if admin
-        if (role === 'admin' && currentUserPartnerId) {
-          return submissions.filter(s => s.partner_id === currentUserPartnerId);
+        // Filter by assigned partners if admin (via admin_partner_map)
+        if (role === 'admin' && user?.id) {
+          const { adminPartnerMapService } = await import('@/services/supabaseService');
+          const assignments = await adminPartnerMapService.getAssignedPartners(user.id);
+          const assignedPartnerIds = assignments.map((ap: any) => ap.partner_id);
+          if (assignedPartnerIds.length > 0) {
+            return submissions.filter(s => assignedPartnerIds.includes(s.partner_id));
+          }
+          return []; // No assigned partners = no submissions
         }
         return submissions || [];
       } catch (error) {
@@ -109,14 +112,14 @@ export default function AdminDashboardMetrics({
     retry: 1,
   });
 
-  // Fetch all nominations (filtered by role)
+  // Fetch all nominations (filtered by role and admin_partner_map)
   const { data: allNominations = [], isLoading: loadingNominations } = useQuery({
-    queryKey: ['dashboardNominations', role, currentUserPartnerId],
+    queryKey: ['dashboardNominations', role, user?.id],
     queryFn: async () => {
       try {
         const nominations = await nominationsService.getAll({
           role: role || undefined,
-          currentUserPartnerId: currentUserPartnerId || undefined,
+          currentUserAuthId: user?.id || undefined,
         });
         return nominations || [];
       } catch (error) {
@@ -127,15 +130,21 @@ export default function AdminDashboardMetrics({
     staleTime: 30000,
   });
 
-  // Fetch all partner progress (filtered by role)
+  // Fetch all partner progress (filtered by assigned partners if admin)
   const { data: allProgress = [], isLoading: loadingProgress } = useQuery({
-    queryKey: ['dashboardProgress', role, currentUserPartnerId],
+    queryKey: ['dashboardProgress', role, user?.id],
     queryFn: async () => {
       try {
         const progress = await partnerProgressService.getAll();
-        // Filter by role if admin
-        if (role === 'admin' && currentUserPartnerId) {
-          return progress.filter(p => p.partner_id === currentUserPartnerId);
+        // Filter by assigned partners if admin (via admin_partner_map)
+        if (role === 'admin' && user?.id) {
+          const { adminPartnerMapService } = await import('@/services/supabaseService');
+          const assignments = await adminPartnerMapService.getAssignedPartners(user.id);
+          const assignedPartnerIds = assignments.map((ap: any) => ap.partner_id);
+          if (assignedPartnerIds.length > 0) {
+            return progress.filter(p => assignedPartnerIds.includes(p.partner_id));
+          }
+          return []; // No assigned partners = no progress
         }
         return progress || [];
       } catch (error) {
@@ -149,7 +158,7 @@ export default function AdminDashboardMetrics({
 
   // Fetch media files count (from media_tracker table)
   const { data: mediaFilesCount = 0, isLoading: loadingMedia } = useQuery({
-    queryKey: ['dashboardMediaFiles', isSuperAdmin, assignedPartners],
+    queryKey: ['dashboardMediaFiles', role, user?.id],
     queryFn: async () => {
       try {
         const { supabase } = await import('@/config/supabase');
@@ -157,8 +166,16 @@ export default function AdminDashboardMetrics({
           .from('media_tracker')
           .select('id', { count: 'exact', head: true });
 
-        if (shouldFilterByAssigned) {
-          query = query.in('partner_id', assignedPartners);
+        // Filter by assigned partners if admin (via admin_partner_map)
+        if (role === 'admin' && user?.id) {
+          const { adminPartnerMapService } = await import('@/services/supabaseService');
+          const assignments = await adminPartnerMapService.getAssignedPartners(user.id);
+          const assignedPartnerIds = assignments.map((ap: any) => ap.partner_id);
+          if (assignedPartnerIds.length > 0) {
+            query = query.in('partner_id', assignedPartnerIds);
+          } else {
+            return 0; // No assigned partners = no media files
+          }
         }
 
         const { count, error } = await query;
@@ -178,7 +195,7 @@ export default function AdminDashboardMetrics({
 
   // Fetch recent activity (last 10)
   const { data: recentActivity = [], isLoading: loadingActivity } = useQuery({
-    queryKey: ['dashboardRecentActivity', isSuperAdmin, assignedPartners],
+    queryKey: ['dashboardRecentActivity', role, user?.id],
     queryFn: async () => {
       try {
         const { supabase } = await import('@/config/supabase');
@@ -192,8 +209,16 @@ export default function AdminDashboardMetrics({
           .order('created_at', { ascending: false })
           .limit(10);
 
-        if (shouldFilterByAssigned) {
-          query = query.in('partner_id', assignedPartners);
+        // Filter by assigned partners if admin (via admin_partner_map)
+        if (role === 'admin' && user?.id) {
+          const { adminPartnerMapService } = await import('@/services/supabaseService');
+          const assignments = await adminPartnerMapService.getAssignedPartners(user.id);
+          const assignedPartnerIds = assignments.map((ap: any) => ap.partner_id);
+          if (assignedPartnerIds.length > 0) {
+            query = query.in('partner_id', assignedPartnerIds);
+          } else {
+            return []; // No assigned partners = no activity
+          }
         }
 
         const { data, error } = await query;

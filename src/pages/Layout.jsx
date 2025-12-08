@@ -78,6 +78,7 @@ import GlobalNotificationBell from "@/components/notifications/GlobalNotificatio
 import { AnimatePresence } from "framer-motion";
 import { Toaster } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAppRole } from "@/hooks/useAppRole";
 
 export default function Layout({ children, currentPageName }) {
   const location = useLocation();
@@ -88,14 +89,14 @@ export default function Layout({ children, currentPageName }) {
   const [showSplash, setShowSplash] = useState(true);
   const [showChat, setShowChat] = useState(false);
 
-  // STRICT ROLE LOGIC - Use role from AuthContext (already resolved from database)
-  // Get role from context - this is the source of truth
+  // STRICT ROLE LOGIC - Use centralized useAppRole hook
+  // This ensures consistent role detection across the app
   // MUST be defined BEFORE any useQuery hooks that depend on it
-  const userRole = role || user?.role;
+  const { role: userRole, partnerId: appRolePartnerId } = useAppRole();
   
   // Log role detection for debugging
   console.log('[Layout] Role detection:', {
-    role,
+    roleFromContext: role,
     userRole,
     userRoleFromUser: user?.role,
     userId: user?.id,
@@ -127,20 +128,22 @@ export default function Layout({ children, currentPageName }) {
   }
 
   // Get all partners (for admin view)
+  // For admins: only show assigned partners via admin_partner_map
+  // For superadmins: show all partners
   // In dev mode, ensure Demo Partner is always included
   const isDevModeLayout = typeof window !== 'undefined' && 
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   
   const { data: allPartners = [], isLoading: loadingPartners, error: partnersError } = useQuery({
-    queryKey: ['allPartners', role, partnerId],
+    queryKey: ['allPartners', role, user?.id],
     queryFn: async () => {
-      console.log('[Layout] Fetching all partners for dropdown...');
+      console.log('[Layout] Fetching partners for dropdown, role:', role);
       const { partnersService } = await import('@/services/supabaseService');
       const partners = await partnersService.getAll({
         role: role || undefined,
-        currentUserPartnerId: partnerId || undefined,
+        currentUserAuthId: user?.id || undefined,
       });
-      console.log('[Layout] Fetched partners:', partners?.length || 0);
+      console.log('[Layout] Fetched partners:', partners?.length || 0, 'for role:', role);
       
       // In dev mode, ensure Demo Partner exists in the list
       if (isDevModeLayout) {
@@ -212,10 +215,9 @@ export default function Layout({ children, currentPageName }) {
         if (isSuperAdmin) {
           console.log('[Layout] Superadmin: Fetching all users (admins + partners)');
           try {
-            const { role, partnerId } = useAuth();
             const partners = await partnersService.getAll({
-              role: role || undefined,
-              currentUserPartnerId: partnerId || undefined,
+              role: userRole || undefined,
+              currentUserAuthId: user?.id || undefined,
             });
             const allUsers = [];
             
@@ -263,7 +265,7 @@ export default function Layout({ children, currentPageName }) {
           try {
             const partners = await partnersService.getAll({
               role: userRole || undefined,
-              currentUserPartnerId: partnerId || undefined,
+              currentUserAuthId: user?.id || undefined,
             });
             const allUsers = [];
             for (const p of partners) {
@@ -313,6 +315,10 @@ export default function Layout({ children, currentPageName }) {
   
   // Effective partner ID for data queries (view-as takes precedence)
   const effectivePartnerId = effectiveViewingAsPartnerId || user?.partner_id;
+
+  // Determine if partner navigation should be shown
+  // Must be defined here before useQuery hooks that use it
+  const shouldShowPartnerNav = isPartner || (isAdmin && !!effectiveViewingAsPartnerId);
 
   const addPartnerViewParam = (url) => {
     if (effectiveViewingAsPartnerId && url) {
@@ -678,9 +684,14 @@ export default function Layout({ children, currentPageName }) {
     { title: "Support Messages", url: "/admin/support", icon: MessageCircle, badge: adminSupportUnread > 0 ? adminSupportUnread : null },
     { title: "Exhibitor Stands", url: "/admin/booths", icon: Building2 },
     { title: "Contracts", url: "/admin/contracts", icon: Briefcase },
-    { title: "User Management", url: "/admin/users", icon: Users },
     { title: "Requirements", url: createPageUrl("AdminRequirements"), icon: ClipboardList },
   ];
+
+  // Only show User Management for superadmin
+  if (isSuperAdmin) {
+    adminBaseNavItems.push({ title: "User Management", url: "/admin/users", icon: Users });
+    adminBaseNavItems.push({ title: "Admin Assignments", url: "/admin/admin-partners", icon: UserCog });
+  }
 
   // Admin Panel section (separate group)
   const adminPanelNavItems = [
@@ -707,11 +718,6 @@ export default function Layout({ children, currentPageName }) {
       url: "/superadmin/control-room",
       icon: BarChart3,
     });
-    superadminOnlyNavItems.push({
-      title: "Manage Admins",
-      url: "/admin/users",
-      icon: UserCog,
-    });
   }
 
   const visibleModules = currentPartner?.visible_modules || [];
@@ -722,7 +728,7 @@ export default function Layout({ children, currentPageName }) {
 
   // STRICT: Show partner navigation ONLY if user is a partner
   // Admins/superadmins can view as partner, but that's handled separately
-  const shouldShowPartnerNav = isPartner || (isAdmin && !!effectiveViewingAsPartnerId);
+  // Note: shouldShowPartnerNav is already defined earlier (after effectivePartnerId)
   
   // Pass isAdmin && effectiveViewingAsPartnerId as isAdminViewing flag
   const filteredSections = shouldShowPartnerNav

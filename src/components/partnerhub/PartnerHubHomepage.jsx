@@ -19,7 +19,9 @@ import {
   AlertCircle,
   Crown,
   Sparkles,
+  Bell,
 } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
 import {
   deliverablesService,
@@ -27,6 +29,7 @@ import {
   contractsService,
   nominationsService,
   partnerSubmissionsService,
+  notificationsService,
 } from "@/services/supabaseService";
 import { createPageUrl } from "@/utils";
 
@@ -178,7 +181,26 @@ export default function PartnerHubHomepage() {
     retry: 1,
   });
 
-  const isLoading = loadingDeliverables || loadingMessages || loadingContracts || loadingNominations || loadingVIP;
+  // Fetch recent notifications (last 5)
+  const { data: recentNotifications = [], isLoading: loadingNotifications } = useQuery({
+    queryKey: ['partnerHubNotifications', currentPartnerId],
+    queryFn: async () => {
+      if (!currentPartnerId) return [];
+      try {
+        const allNotifications = await notificationsService.getByPartnerId(currentPartnerId, false);
+        return allNotifications.slice(0, 5); // Get last 5
+      } catch (error) {
+        console.error('[PartnerHubHomepage] Error fetching notifications:', error);
+        return [];
+      }
+    },
+    enabled: !!currentPartnerId,
+    retry: 1,
+  });
+
+  const unreadNotificationsCount = recentNotifications.filter(n => !n.read).length;
+
+  const isLoading = loadingDeliverables || loadingMessages || loadingContracts || loadingNominations || loadingVIP || loadingNotifications;
   const hasData = pendingDeliverablesCount > 0 || unreadMessagesCount > 0 || contractsData.length > 0 || nominationsCount > 0 || vipInvitationsCount > 0;
 
   // Loading state
@@ -227,6 +249,71 @@ export default function PartnerHubHomepage() {
           </CardContent>
         </Card>
       </motion.div>
+
+      {/* Recent Notifications Banner */}
+      {recentNotifications.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.1 }}
+        >
+          <Card className="border-blue-200 bg-blue-50">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Bell className="w-5 h-5 text-blue-600" />
+                  Recent Notifications
+                  {unreadNotificationsCount > 0 && (
+                    <Badge variant="destructive" className="ml-2">
+                      {unreadNotificationsCount} new
+                    </Badge>
+                  )}
+                </CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate(createPageUrl("Notifications"))}
+                >
+                  View All <ArrowRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {recentNotifications.slice(0, 3).map((notification) => (
+                  <div
+                    key={notification.id}
+                    className={`p-3 rounded-lg border ${
+                      notification.read
+                        ? 'bg-white border-gray-200'
+                        : 'bg-blue-100 border-blue-300'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-semibold text-sm text-gray-900">
+                            {notification.title}
+                          </h4>
+                          {!notification.read && (
+                            <div className="w-2 h-2 bg-blue-600 rounded-full" />
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {notification.message}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Dashboard Widgets */}
       {hasData ? (

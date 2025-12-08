@@ -30,7 +30,7 @@ import { format } from 'date-fns';
 import { motion } from 'framer-motion';
 
 export default function AdminContracts() {
-  const { user, currentPartnerId } = useAuth();
+  const { user, role } = useAuth();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -40,7 +40,8 @@ export default function AdminContracts() {
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [showDiscussionDialog, setShowDiscussionDialog] = useState(false);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin;
+  const isSuperAdmin = role === 'superadmin';
+  const isAdmin = role === 'admin' || isSuperAdmin;
 
   // Fetch all contracts
   const { data: contracts = [], isLoading } = useQuery({
@@ -55,10 +56,13 @@ export default function AdminContracts() {
     refetchInterval: 30000,
   });
 
-  // Fetch all partners for filter
+  // Fetch all partners for filter (superadmin sees all, admin sees only assigned)
   const { data: allPartners = [] } = useQuery({
-    queryKey: ['allPartners'],
-    queryFn: () => partnersService.getAll(),
+    queryKey: ['allPartners', role, user?.id],
+    queryFn: () => partnersService.getAll({
+      role: role || undefined,
+      currentUserAuthId: user?.id || undefined,
+    }),
     enabled: isAdmin,
   });
 

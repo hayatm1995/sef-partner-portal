@@ -2,6 +2,8 @@ import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAppRole } from "@/hooks/useAppRole";
+import { supabase } from "@/config/supabase";
 import { partnersService, partnerUsersService, deliverablesService, nominationsService, partnerProgressService } from "@/services/supabaseService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,47 +40,80 @@ import PartnerProfileModal from "@/components/admin/PartnerProfileModal";
 export default function AdminPartners() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { role } = useAppRole();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [partnerToDelete, setPartnerToDelete] = useState(null);
   const [selectedPartnerId, setSelectedPartnerId] = useState(null);
   const [activeTab, setActiveTab] = useState("partners");
 
-  // STRICT: Check if user is admin or superadmin - use role from context
-  const { role } = useAuth();
+  // Use unified role hook - superadmin override always wins
   const isSuperAdmin = role === 'superadmin';
   const isAdmin = role === 'admin' || isSuperAdmin;
 
-  // Redirect if not admin or superadmin
-  React.useEffect(() => {
-    if (user && !isAdmin) {
-      toast.error("Access denied. Admin access required.");
-      navigate("/Dashboard");
-    }
-  }, [user, isAdmin, navigate]);
+  // NO ROLE RESTRICTIONS - Everyone can access
 
-  const { role: userRole, partnerId } = useAuth();
-
-  // Fetch all partners (role-based filtering)
-  const { data: partners = [], isLoading: partnersLoading } = useQuery({
-    queryKey: ['adminPartners', userRole, partnerId],
+  // Fetch all partners - NO ROLE FILTERING
+  const { data: partners = [], isLoading: partnersLoading, error: partnersError } = useQuery({
+    queryKey: ['adminPartners'],
     queryFn: async () => {
-      return partnersService.getAll({
-        role: userRole || undefined,
-        currentUserPartnerId: partnerId || undefined,
-      });
+      console.log('[AdminPartners] Fetching all partners (no role filtering)');
+      
+      try {
+        // Always fetch all partners - no role checks
+        const result = await partnersService.getAll();
+        
+        console.log('[AdminPartners] ✅ Fetched partners:', result?.length || 0);
+        
+        return result || [];
+      } catch (error) {
+        console.error('[AdminPartners] ❌ Error fetching partners:', error);
+        return []; // Return empty array on error
+      }
     },
-    enabled: isAdmin,
+    enabled: true, // Always enabled
+    retry: 2,
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
+
+  // Enhanced debug logging
+  React.useEffect(() => {
+    const debugInfo = {
+      role,
+      isSuperAdmin,
+      isAdmin,
+      user: user?.email,
+      userId: user?.id,
+      partnersCount: partners.length,
+      isLoading: partnersLoading,
+      error: partnersError,
+      queryEnabled: isAdmin && !!user,
+      partnersList: partners.slice(0, 3).map(p => ({ id: p.id, name: p.name })), // First 3 partners
+    };
+    
+    console.log('[AdminPartners] 📊 Debug Info:', debugInfo);
+    
+    // If superadmin but no partners, log warning
+    if (isSuperAdmin && !partnersLoading && partners.length === 0 && !partnersError) {
+      console.warn('[AdminPartners] ⚠️ WARNING: Superadmin but zero partners returned!', {
+        role,
+        userEmail: user?.email,
+        queryEnabled: debugInfo.queryEnabled,
+        error: partnersError
+      });
+    }
+  }, [role, isSuperAdmin, isAdmin, user, partners.length, partnersLoading, partnersError]);
 
   // Fetch all partner users to calculate stats (role-based filtering)
   const { data: allPartnerUsers = [] } = useQuery({
-    queryKey: ['allPartnerUsers', userRole, partnerId],
+    queryKey: ['allPartnerUsers', role, user?.id],
     queryFn: async () => {
       const { partnerUsersService } = await import('@/services/supabaseService');
       const partners = await partnersService.getAll({
         role: role || undefined,
-        currentUserPartnerId: partnerId || undefined,
+        currentUserAuthId: user?.id || undefined,
       });
       const allUsers = [];
       for (const p of partners) {
@@ -92,11 +127,11 @@ export default function AdminPartners() {
 
   // Fetch all deliverables for progress calculation (role-based filtering)
   const { data: allDeliverables = [] } = useQuery({
-    queryKey: ['allDeliverables', role, partnerId],
+    queryKey: ['allDeliverables', role, user?.id],
     queryFn: async () => {
       return deliverablesService.getAll({
-        role: userRole || undefined,
-        currentUserPartnerId: partnerId || undefined,
+        role: role || undefined,
+        currentUserAuthId: user?.id || undefined,
       });
     },
     enabled: isAdmin,
@@ -104,11 +139,11 @@ export default function AdminPartners() {
 
   // Fetch all nominations for progress calculation (role-based filtering)
   const { data: allNominations = [] } = useQuery({
-    queryKey: ['allNominations', userRole, partnerId],
+    queryKey: ['allNominations', role, user?.id],
     queryFn: async () => {
       return nominationsService.getAll({
-        role: userRole || undefined,
-        currentUserPartnerId: partnerId || undefined,
+        role: role || undefined,
+        currentUserAuthId: user?.id || undefined,
       });
     },
     enabled: isAdmin,
@@ -211,12 +246,30 @@ export default function AdminPartners() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Partner Management</h1>
-          <p className="text-gray-600 mt-1">Manage all partners and their settings</p>
+          <p className="text-gray-600 mt-1">
+            {isSuperAdmin ? 'Manage all partners' : 'Manage assigned partners'} 
+            {partners.length > 0 && ` (${partners.length} total)`}
+          </p>
         </div>
-        <Button onClick={() => navigate("/admin/partners/new")}>
-          <Plus className="w-4 h-4 mr-2" />
-          Add Partner
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline"
+            onClick={() => {
+              queryClient.invalidateQueries({ queryKey: ['adminPartners'] });
+              toast.info('Refreshing partners list...');
+            }}
+            disabled={partnersLoading}
+          >
+            <TrendingUp className="w-4 h-4 mr-2" />
+            Refresh
+          </Button>
+          {isSuperAdmin && (
+            <Button onClick={() => navigate("/admin/partners/new")}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Partner
+            </Button>
+          )}
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
@@ -243,14 +296,42 @@ export default function AdminPartners() {
           </div>
         </CardHeader>
         <CardContent>
-          {partnersLoading ? (
+          {partnersError ? (
+            <div className="text-center py-12">
+              <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-500" />
+              <p className="text-red-600 font-semibold mb-2">Error loading partners</p>
+              <p className="text-sm text-gray-600">{partnersError.message || 'Unknown error'}</p>
+              <Button 
+                variant="outline" 
+                className="mt-4"
+                onClick={() => queryClient.invalidateQueries({ queryKey: ['adminPartners'] })}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : partnersLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
+              <span className="ml-3 text-gray-600">Loading partners...</span>
             </div>
           ) : filteredPartners.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
               <Building2 className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-              <p>No partners found</p>
+              <p className="font-semibold mb-2">No partners found</p>
+              <p className="text-sm">
+                {searchQuery ? 'Try adjusting your search query' : 
+                 isSuperAdmin ? 'No partners in database' : 
+                 'No partners assigned to you. Contact a superadmin to get assigned partners.'}
+              </p>
+              {isSuperAdmin && !searchQuery && (
+                <Button 
+                  variant="outline" 
+                  className="mt-4"
+                  onClick={() => queryClient.invalidateQueries({ queryKey: ['adminPartners'] })}
+                >
+                  Refresh
+                </Button>
+              )}
             </div>
           ) : (
             <Table>

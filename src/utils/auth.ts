@@ -1,3 +1,6 @@
+// 🚫 DEPRECATED — Do not use for role logic.
+// Use fetchCurrentUser() + useAppRole() instead.
+
 import { supabase } from '@/config/supabase';
 import { SUPERADMIN } from '@/constants/users';
 
@@ -7,6 +10,7 @@ import { SUPERADMIN } from '@/constants/users';
 export interface UserRoleInfo {
   role: 'superadmin' | 'admin' | 'partner' | null;
   partner_id: string | null;
+  is_disabled?: boolean;
 }
 
 /**
@@ -77,11 +81,17 @@ export async function getUserRole(user: any): Promise<UserRoleInfo> {
   try {
     const { data: partnerUser, error } = await supabase
       .from('partner_users')
-      .select('role, partner_id')
+      .select('role, partner_id, is_disabled')
       .eq('auth_user_id', user.id)
       .single();
 
     if (!error && partnerUser) {
+      // Check if user is disabled - return null role to force logout
+      if (partnerUser.is_disabled === true) {
+        console.warn('[getUserRole] User is disabled, returning null role');
+        return { role: null, partner_id: null, is_disabled: true };
+      }
+
       const dbRole = partnerUser.role;
       const dbPartnerId = partnerUser.partner_id;
       console.log('[getUserRole] Role from partner_users table:', dbRole, 'partner_id:', dbPartnerId);

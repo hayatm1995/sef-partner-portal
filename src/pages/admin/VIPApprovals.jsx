@@ -49,14 +49,15 @@ import { format } from 'date-fns';
 import Breadcrumbs from '@/components/common/Breadcrumbs';
 
 export default function VIPApprovals() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const queryClient = useQueryClient();
   const [eventFilter, setEventFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [rejectDialog, setRejectDialog] = useState({ open: false, invitation: null, reason: '' });
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin;
+  const isSuperAdmin = role === 'superadmin';
+  const isAdmin = role === 'admin' || isSuperAdmin;
 
   // Redirect if not admin
   React.useEffect(() => {
@@ -77,10 +78,13 @@ export default function VIPApprovals() {
     enabled: isAdmin,
   });
 
-  // Fetch all partners for lookup
+  // Fetch all partners for lookup (superadmin sees all, admin sees only assigned)
   const { data: allPartners = [] } = useQuery({
-    queryKey: ['allPartners'],
-    queryFn: () => partnersService.getAll(),
+    queryKey: ['allPartners', role, user?.id],
+    queryFn: () => partnersService.getAll({
+      role: role || undefined,
+      currentUserAuthId: user?.id || undefined,
+    }),
     enabled: isAdmin,
   });
 

@@ -25,13 +25,13 @@ import { format } from 'date-fns';
 import { motion } from 'framer-motion';
 
 export default function AdminUsers() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin;
-  const isSuperAdmin = user?.role === 'sef_admin';
+  const isSuperAdmin = role === 'superadmin';
+  const isAdmin = role === 'admin' || isSuperAdmin;
 
   // Fetch all partner users
   const { data: allUsers = [], isLoading } = useQuery({
@@ -55,10 +55,13 @@ export default function AdminUsers() {
     enabled: isAdmin,
   });
 
-  // Fetch all partners for dropdown
+  // Fetch all partners for dropdown (superadmin sees all, admin sees only assigned)
   const { data: allPartners = [] } = useQuery({
-    queryKey: ['allPartners'],
-    queryFn: () => partnersService.getAll(),
+    queryKey: ['allPartners', role, user?.id],
+    queryFn: () => partnersService.getAll({
+      role: role || undefined,
+      currentUserAuthId: user?.id || undefined,
+    }),
     enabled: isAdmin,
   });
 

@@ -17,8 +17,9 @@ export default function InvitePartner() {
   const [partnerEmail, setPartnerEmail] = useState('');
   const [tier, setTier] = useState('');
 
-  // Wait for role to be loaded before checking access
-  if (loading || !role) {
+  // Show loading spinner only during actual loading
+  // Role should resolve independently of partner data
+  if (loading) {
     return (
       <div className="p-4 md:p-8 max-w-7xl mx-auto">
         <Card>

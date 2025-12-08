@@ -67,7 +67,29 @@ export const deliverablesService = {
   },
 
   /**
-   * Fetch all deliverables for admin review
+   * Fetch all deliverables - NO ROLE FILTERING
+   */
+  getAll: async (partnerId?: string) => {
+    let query = supabase
+      .from("deliverables")
+      .select(`
+        *,
+        partners (id, name)
+      `);
+    
+    // If partnerId provided, filter by it (optional filtering)
+    if (partnerId) {
+      query = query.eq("partner_id", partnerId);
+    }
+    
+    const { data, error } = await query.order("submitted_at", { ascending: false });
+
+    if (error) throw error;
+    return data as Deliverable[];
+  },
+
+  /**
+   * Fetch all deliverables for admin review (legacy - use getAll)
    */
   getAllDeliverables: async () => {
     const { data, error } = await supabase

@@ -1,3 +1,6 @@
+// 🚫 DEPRECATED — Do not use for role logic.
+// Use fetchCurrentUser() + useAppRole() instead.
+
 import { supabase } from '@/config/supabase';
 import { SUPERADMIN } from '@/constants/users';
 

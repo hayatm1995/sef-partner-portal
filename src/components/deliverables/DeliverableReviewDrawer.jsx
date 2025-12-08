@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle, XCircle, FileText, ExternalLink, MessageSquare } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, FileText, ExternalLink, MessageSquare, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import DeliverableVersionHistory from './DeliverableVersionHistory';
 import DeliverableComments from './DeliverableComments';
@@ -28,6 +28,7 @@ export default function DeliverableReviewDrawer({
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [rejectionReason, setRejectionReason] = useState('');
+  const [revisionNotes, setRevisionNotes] = useState('');
   const [adminComment, setAdminComment] = useState('');
   const [processing, setProcessing] = useState(false);
   
@@ -35,6 +36,7 @@ export default function DeliverableReviewDrawer({
   React.useEffect(() => {
     if (!open) {
       setRejectionReason('');
+      setRevisionNotes('');
       setAdminComment('');
     }
   }, [open]);
@@ -196,13 +198,97 @@ export default function DeliverableReviewDrawer({
     });
   };
 
+  // Request revision mutation
+  const requestRevisionMutation = useMutation({
+    mutationFn: async ({ submissionId, notes }) => {
+      if (!notes.trim()) {
+        throw new Error('Revision notes are required');
+      }
+
+      setProcessing(true);
+      try {
+        // Update submission status to revision_required
+        const updatedSubmission = await partnerSubmissionsService.update(submissionId, {
+          status: 'revision_required',
+          rejection_reason: notes.trim(),
+          reviewed_by: user?.partner_user?.id,
+        });
+
+        // Update deliverable status
+        if (deliverable?.id) {
+          await deliverablesService.update(deliverable.id, {
+            status: 'Revision Required',
+          });
+        }
+
+        // Notify partner
+        if (partner?.id) {
+          await notificationsService.create({
+            partner_id: partner.id,
+            type: 'warning',
+            title: 'Revision Required',
+            message: `Your submission for "${deliverable?.name || deliverable?.title}" needs changes. Please review the feedback and resubmit.`,
+          });
+        }
+
+        // Add admin comment
+        if (user?.partner_user?.id) {
+          await deliverableCommentsService.create({
+            deliverable_id: deliverable.id,
+            submission_id: submissionId,
+            user_id: user.partner_user.id,
+            message: `Revision Required: ${notes.trim()}`,
+            is_admin: true,
+          });
+        }
+
+        return updatedSubmission;
+      } finally {
+        setProcessing(false);
+      }
+    },
+    onSuccess: () => {
+      toast.success('Revision requested successfully');
+      queryClient.invalidateQueries({ queryKey: ['allSubmissions'] });
+      queryClient.invalidateQueries({ queryKey: ['deliverableSubmissions'] });
+      queryClient.invalidateQueries({ queryKey: ['allDeliverables'] });
+      queryClient.invalidateQueries({ queryKey: ['partnerProgress'] });
+      setRevisionNotes('');
+      setAdminComment('');
+      onClose();
+    },
+    onError: (error) => {
+      console.error('Request revision error:', error);
+      toast.error('Failed to request revision: ' + (error.message || 'Unknown error'));
+    },
+  });
+
+  const handleRequestRevision = () => {
+    if (!latestSubmission?.id) {
+      toast.error('No submission to review');
+      return;
+    }
+    if (!revisionNotes.trim()) {
+      toast.error('Please provide revision notes');
+      return;
+    }
+    requestRevisionMutation.mutate({
+      submissionId: latestSubmission.id,
+      notes: revisionNotes,
+    });
+  };
+
   const getStatusBadge = (status) => {
     const configs = {
       pending: { className: 'bg-yellow-100 text-yellow-800', label: 'Pending' },
+      submitted: { className: 'bg-blue-100 text-blue-800', label: 'Submitted' },
       approved: { className: 'bg-green-100 text-green-800', label: 'Approved' },
       rejected: { className: 'bg-red-100 text-red-800', label: 'Rejected' },
+      revision_required: { className: 'bg-orange-100 text-orange-800', label: 'Revision Required' },
+      'revision needed': { className: 'bg-orange-100 text-orange-800', label: 'Revision Required' },
     };
-    const config = configs[status] || { className: 'bg-gray-100 text-gray-800', label: 'Unknown' };
+    const normalizedStatus = status?.toLowerCase();
+    const config = configs[normalizedStatus] || { className: 'bg-gray-100 text-gray-800', label: 'Unknown' };
     
     return (
       <Badge className={config.className} variant="outline">
@@ -299,6 +385,25 @@ export default function DeliverableReviewDrawer({
                 />
               </div>
 
+              {/* Revision Notes */}
+              <div>
+                <Label htmlFor="revisionNotes">
+                  Revision Notes <span className="text-orange-600">*</span>
+                </Label>
+                <Textarea
+                  id="revisionNotes"
+                  value={revisionNotes}
+                  onChange={(e) => setRevisionNotes(e.target.value)}
+                  placeholder="Please specify what changes are needed..."
+                  rows={3}
+                  className="mt-1"
+                  disabled={processing}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Partner will be notified to make changes and resubmit
+                </p>
+              </div>
+
               {/* Rejection Reason (if rejecting) */}
               <div>
                 <Label htmlFor="rejectionReason">
@@ -317,50 +422,71 @@ export default function DeliverableReviewDrawer({
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3 pt-4 border-t">
-                <Button
-                  variant="outline"
-                  onClick={onClose}
-                  disabled={processing}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={handleReject}
-                  disabled={processing || !rejectionReason.trim()}
-                  className="flex-1"
-                >
-                  {processing && rejectMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Rejecting...
-                    </>
-                  ) : (
-                    <>
-                      <XCircle className="w-4 h-4 mr-2" />
-                      Reject
-                    </>
-                  )}
-                </Button>
-                <Button
-                  onClick={handleApprove}
-                  disabled={processing}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
-                >
-                  {processing && approveMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Approving...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Approve
-                    </>
-                  )}
-                </Button>
+              <div className="flex flex-col gap-3 pt-4 border-t">
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={onClose}
+                    disabled={processing}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={handleReject}
+                    disabled={processing || !rejectionReason.trim()}
+                    className="flex-1"
+                  >
+                    {processing && rejectMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Rejecting...
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="w-4 h-4 mr-2" />
+                        Reject
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <div className="flex gap-3">
+                  <Button
+                    onClick={handleRequestRevision}
+                    disabled={processing || !revisionNotes.trim()}
+                    className="flex-1 bg-orange-600 hover:bg-orange-700 text-white"
+                  >
+                    {processing && requestRevisionMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Requesting Revision...
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-4 h-4 mr-2" />
+                        Request Changes
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={handleApprove}
+                    disabled={processing}
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                  >
+                    {processing && approveMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Approving...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Approve
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           ) : (

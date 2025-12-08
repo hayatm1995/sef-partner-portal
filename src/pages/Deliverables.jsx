@@ -55,23 +55,17 @@ export default function Deliverables() {
   }
 
   const { data: deliverables = [], isLoading, error: deliverablesError } = useQuery({
-    queryKey: ['deliverables', currentPartnerId, isAdmin, viewAsPartnerId],
+    queryKey: ['deliverables', currentPartnerId],
     queryFn: async () => {
       try {
-        if (isAdmin && !viewAsPartnerId) {
-          // Admin viewing all deliverables
-          return await deliverablesService.getAll();
-        } else if (currentPartnerId) {
-          // Partner viewing their own OR admin viewing as specific partner
-          return await deliverablesService.getAll(currentPartnerId);
-        }
-        return [];
+        // NO ROLE FILTERING - return all deliverables, optionally filter by partnerId if provided
+        return await deliverablesService.getAll(currentPartnerId || undefined);
       } catch (error) {
         console.error('Error fetching deliverables:', error);
         return []; // Return empty array on error to prevent crashes
       }
     },
-    enabled: !!user && (isAdmin || !!currentPartnerId),
+    enabled: true, // Always enabled - no role checks
   });
 
   // Ensure deliverables is always an array

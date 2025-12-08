@@ -12,13 +12,14 @@ import SubmissionCard from "@/components/submissions/SubmissionCard";
 import RejectionModal from "@/components/submissions/RejectionModal";
 
 export default function AdminSubmissions() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("pending_review");
   const [rejectionModal, setRejectionModal] = useState({ open: false, submission: null, mode: 'reject' });
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin;
+  const isSuperAdmin = role === 'superadmin';
+  const isAdmin = role === 'admin' || isSuperAdmin;
 
   // Fetch all submissions
   const { data: allSubmissions = [], isLoading } = useQuery({
@@ -34,10 +35,13 @@ export default function AdminSubmissions() {
     enabled: isAdmin,
   });
 
-  // Fetch all partners for name mapping
+  // Fetch all partners for name mapping (superadmin sees all, admin sees only assigned)
   const { data: allPartners = [] } = useQuery({
-    queryKey: ['allPartners'],
-    queryFn: async () => partnersService.getAll(),
+    queryKey: ['allPartners', role, user?.id],
+    queryFn: async () => partnersService.getAll({
+      role: role || undefined,
+      currentUserAuthId: user?.id || undefined,
+    }),
     enabled: isAdmin,
   });
 

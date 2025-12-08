@@ -23,8 +23,9 @@ export default function DeliverablesReview() {
   const [selectedDeliverable, setSelectedDeliverable] = useState<Deliverable | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
-  // STRICT: Wait for role to load
-  if (loading || !role) {
+  // Show loading spinner only during actual loading
+  // Role should resolve independently of partner data
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
         <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
@@ -35,10 +36,13 @@ export default function DeliverablesReview() {
   // STRICT: Only superadmin can access
   const isSuperAdmin = role === 'superadmin';
 
-  // Fetch partners for filter
+  // Fetch partners for filter (superadmin sees all)
   const { data: partners = [] } = useQuery({
-    queryKey: ["partners"],
-    queryFn: () => partnersService.getAll(),
+    queryKey: ["partners", role, user?.id],
+    queryFn: () => partnersService.getAll({
+      role: role || undefined,
+      currentUserAuthId: user?.id || undefined,
+    }),
     enabled: isSuperAdmin,
   });
 

@@ -30,10 +30,14 @@ import { motion } from "framer-motion";
 import { format } from "date-fns";
 
 export default function PartnerDashboard() {
-  const { user, partner } = useAuth();
+  const { user, partner, partnerId: contextPartnerId } = useAuth();
   const navigate = useNavigate();
 
-  const partnerId = user?.partner_id || partner?.id;
+  // Get partner_id from multiple sources in priority order:
+  // 1. Context partnerId (from partner_users table)
+  // 2. user.partner_id (from metadata)
+  // 3. partner.id (from partner object)
+  const partnerId = contextPartnerId || user?.partner_id || partner?.id;
 
   // Fetch partner data for budget
   const { data: partnerData } = useQuery({

@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAppRole } from "@/hooks/useAppRole";
+import { DEV_MODE } from "@/config/devMode";
 import { deliverablesService, Deliverable } from "@/services/deliverablesService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,12 +12,41 @@ import { Loader2, FileText, Upload, Eye, AlertCircle } from "lucide-react";
 import UploadModal from "@/components/deliverables/UploadModal";
 
 export default function PartnerDeliverables() {
-  const { user, partner, role, loading } = useAuth();
+  const { user, partner, loading } = useAuth();
+  const { role, partnerId: appRolePartnerId } = useAppRole();
   const [selectedDeliverable, setSelectedDeliverable] = useState<Deliverable | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
-  // STRICT: Wait for role to load
-  if (loading || !role) {
+  // In Dev Mode, show message if role/partner not set
+  if (DEV_MODE) {
+    if (role !== "partner") {
+      return (
+        <div className="p-8 max-w-7xl mx-auto">
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-lg font-semibold mb-2">Dev Mode: Switch to Partner Role</p>
+              <p className="text-gray-600 mb-4">Go to /dev and select Partner role to view this page.</p>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+    if (!appRolePartnerId) {
+      return (
+        <div className="p-8 max-w-7xl mx-auto">
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-lg font-semibold mb-2">Dev Mode: No Partner Selected</p>
+              <p className="text-gray-600 mb-4">Go back to /dev and choose a partner.</p>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+  }
+
+  // Show loading spinner only during actual loading (not in Dev Mode)
+  if (!DEV_MODE && loading) {
     return (
       <div className="flex items-center justify-center h-96">
         <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
@@ -36,8 +67,8 @@ export default function PartnerDeliverables() {
     );
   }
 
-  // Ensure we have a partner ID
-  const partnerId = partner?.id;
+  // Ensure we have a partner ID (use appRolePartnerId in Dev Mode)
+  const partnerId = DEV_MODE ? appRolePartnerId : (partner?.id);
 
   const { data: deliverables = [], isLoading, refetch } = useQuery({
     queryKey: ["partnerDeliverables", partnerId],

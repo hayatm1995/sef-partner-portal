@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
 import { getUserRole, getUserRoleSync } from '@/utils/auth';
+import { fetchCurrentUser } from '@/utils/currentUser';
 import { SUPERADMIN } from '@/constants/users';
 
 const AuthContext = createContext(undefined);
@@ -46,51 +47,142 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
+    let isMounted = true;
+    
+    // Safety timeout to ensure loading always resolves (15 seconds max)
+    const safetyTimeout = setTimeout(() => {
+      if (isMounted) {
+        console.warn('[AuthContext] Safety timeout reached - forcing loading to false');
+        setLoading(false);
+      }
+    }, 15000);
+    
     const init = async () => {
       try {
+        // First, quickly check for session - don't wait for role resolution
         const { data } = await supabase.auth.getSession();
+        if (!isMounted) return;
+        
         setSession(data.session);
-        if (data.session?.user) {
-          console.log('[AuthContext] Initializing auth for user:', {
-            id: data.session.user.id,
-            email: data.session.user.email
-          });
-          
-          // Use getUserRole helper that checks both metadata and database
-          const roleInfo = await getUserRole(data.session.user);
-          
-          console.log('[AuthContext] Resolved role info:', {
-            role: roleInfo.role,
-            partner_id: roleInfo.partner_id,
-            user_id: data.session.user.id,
-            email: data.session.user.email
-          });
-          
-          setRole(roleInfo.role);
-          setPartnerId(roleInfo.partner_id);
-          
-          // Sync metadata if needed (after initial load)
-          // Don't block on this, just log if mismatch
-          syncUserMetadata(data.session.user).catch(console.error);
-        } else {
-          console.log('[AuthContext] No session found');
+        
+        // If no session, immediately stop loading and show landing page
+        if (!data.session?.user) {
+          console.log('[AuthContext] No session found - showing landing page');
           setRole(null);
           setPartnerId(null);
+          setLoading(false);
+          return;
+        }
+        
+        // We have a session - now resolve role (but don't block UI)
+        console.log('[AuthContext] Initializing auth for user:', {
+          id: data.session.user.id,
+          email: data.session.user.email
+        });
+        
+        // Quick superadmin check first (email-based, no DB needed)
+        const email = data.session.user.email || '';
+        const superadminEmails = ['hayat.malik6@gmail.com', 'h.malik@sheraa.ae'];
+        const isSuperadminEmail = superadminEmails.some(e => email.toLowerCase() === e.toLowerCase());
+        
+        if (isSuperadminEmail) {
+          console.log('[AuthContext] Superadmin email detected - setting role immediately');
+          setRole('superadmin');
+          setPartnerId(null);
+          setLoading(false);
+          
+          // Fetch full user data in background (non-blocking)
+          fetchCurrentUser(data.session.user.id).then(currentUser => {
+            if (isMounted && currentUser) {
+              setPartnerId(currentUser.partnerId);
+            }
+          }).catch(console.error);
+          return;
+        }
+        
+        // For non-superadmins, fetch role from DB (with timeout)
+        const fetchUserPromise = fetchCurrentUser(data.session.user.id);
+        const timeoutPromise = new Promise<null>((resolve) => 
+          setTimeout(() => {
+            console.warn('[AuthContext] fetchCurrentUser timeout - using fallback');
+            resolve(null);
+          }, 3000) // 3 second timeout
+        );
+        
+        const currentUser = await Promise.race([fetchUserPromise, timeoutPromise]);
+        
+        if (!isMounted) return;
+        
+        if (!currentUser) {
+          console.warn('[AuthContext] Could not fetch current user - setting role to null');
+          setRole(null);
+          setPartnerId(null);
+          setLoading(false);
+          return;
+        }
+        
+        // Check if user is disabled
+        if (currentUser.isDisabled === true) {
+          console.warn('[AuthContext] User is disabled, forcing logout');
+          await supabase.auth.signOut();
+          if (isMounted) {
+            setSession(null);
+            setRole(null);
+            setPartnerId(null);
+          }
+          setLoading(false);
+          return;
+        }
+        
+        console.log('[AuthContext] Resolved role info:', {
+          role: currentUser.role,
+          partner_id: currentUser.partnerId,
+          email: currentUser.email,
+          isSuperadmin: currentUser.isSuperadmin,
+          isAdmin: currentUser.isAdmin
+        });
+        
+        if (isMounted) {
+          // Map to legacy role format (null for unknown)
+          const legacyRole = currentUser.role === 'unknown' ? null : currentUser.role;
+          setRole(legacyRole);
+          setPartnerId(currentUser.partnerId);
         }
       } catch (error) {
         console.error('[AuthContext] Error initializing auth:', error);
+        if (isMounted) {
+          setRole(null);
+          setPartnerId(null);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          clearTimeout(safetyTimeout);
+          setLoading(false);
+        }
       }
     };
 
     init();
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(safetyTimeout);
+    };
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('[AuthContext] Auth state changed:', event);
       setSession(session);
+      
+      if (!session) {
+        console.log('[AuthContext] No user in session, clearing role');
+        setRole(null);
+        setPartnerId(null);
+        setLoading(false);
+        return;
+      }
+      
       if (session?.user) {
         console.log('[AuthContext] Processing auth state change for user:', {
           id: session.user.id,
@@ -98,27 +190,54 @@ export const AuthProvider = ({ children }) => {
           event
         });
         
-        // Use getUserRole helper that checks both metadata and database
-        const roleInfo = await getUserRole(session.user);
-        
-        console.log('[AuthContext] Resolved role info from state change:', {
-          role: roleInfo.role,
-          partner_id: roleInfo.partner_id,
-          user_id: session.user.id,
-          email: session.user.email
-        });
-        
-        setRole(roleInfo.role);
-        setPartnerId(roleInfo.partner_id);
-        
-        // After SIGNED_IN event, sync metadata
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          syncUserMetadata(session.user).catch(console.error);
+        try {
+          // Use new fetchCurrentUser utility (single source of truth)
+          const currentUser = await fetchCurrentUser(session.user.id);
+          
+          if (!currentUser) {
+            console.warn('[AuthContext] Could not fetch current user from state change');
+            setRole(null);
+            setPartnerId(null);
+            setLoading(false);
+            return;
+          }
+          
+          // Check if user is disabled - force logout
+          if (currentUser.isDisabled === true) {
+            console.warn('[AuthContext] User is disabled, forcing logout');
+            await supabase.auth.signOut();
+            setSession(null);
+            setRole(null);
+            setPartnerId(null);
+            setLoading(false);
+            return;
+          }
+          
+          console.log('[AuthContext] Resolved role info from state change:', {
+            role: currentUser.role,
+            partner_id: currentUser.partnerId,
+            user_id: currentUser.authUserId,
+            email: currentUser.email,
+            isSuperadmin: currentUser.isSuperadmin,
+            isAdmin: currentUser.isAdmin
+          });
+          
+          // Map to legacy role format (null for unknown)
+          const legacyRole = currentUser.role === 'unknown' ? null : currentUser.role;
+          setRole(legacyRole);
+          setPartnerId(currentUser.partnerId);
+          setLoading(false);
+          
+          // After SIGNED_IN event, sync metadata
+          if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+            syncUserMetadata(session.user).catch(console.error);
+          }
+        } catch (error) {
+          console.error('[AuthContext] Error in auth state change:', error);
+          setRole(null);
+          setPartnerId(null);
+          setLoading(false);
         }
-      } else {
-        console.log('[AuthContext] No user in session, clearing role');
-        setRole(null);
-        setPartnerId(null);
       }
     });
 
@@ -133,10 +252,28 @@ export const AuthProvider = ({ children }) => {
       });
       
       if (data?.session?.user) {
-        // Get role and partner_id from metadata/database
-        const roleInfo = await getUserRole(data.session.user);
-        setRole(roleInfo.role);
-        setPartnerId(roleInfo.partner_id);
+        // Use new fetchCurrentUser utility (single source of truth)
+        const currentUser = await fetchCurrentUser(data.session.user.id);
+        
+        if (!currentUser) {
+          console.warn('[AuthContext] Could not fetch current user after login');
+          return { data: null, error: { message: 'Could not fetch user information' } };
+        }
+        
+        // Check if user is disabled - force logout
+        if (currentUser.isDisabled === true) {
+          console.warn('[AuthContext] User is disabled, forcing logout');
+          await supabase.auth.signOut();
+          setSession(null);
+          setRole(null);
+          setPartnerId(null);
+          return { data: null, error: { message: 'Account is disabled' } };
+        }
+        
+        // Map to legacy role format (null for unknown)
+        const legacyRole = currentUser.role === 'unknown' ? null : currentUser.role;
+        setRole(legacyRole);
+        setPartnerId(currentUser.partnerId);
         
         // Sync metadata to ensure JWT contains role and partner_id
         await syncUserMetadata(data.session.user);

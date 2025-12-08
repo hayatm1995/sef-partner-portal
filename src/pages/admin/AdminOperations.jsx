@@ -53,10 +53,13 @@ export default function AdminOperations() {
     );
   }
 
-  // Fetch all partners
+  // Fetch all partners (superadmin sees all, admin sees only assigned)
   const { data: allPartners = [], isLoading: partnersLoading } = useQuery({
-    queryKey: ['allPartners'],
-    queryFn: () => partnersService.getAll(),
+    queryKey: ['allPartners', role, user?.id],
+    queryFn: () => partnersService.getAll({
+      role: role || undefined,
+      currentUserAuthId: user?.id || undefined,
+    }),
     enabled: isAdmin,
   });
 

@@ -13,14 +13,15 @@ import { Search, Bell, Loader2, CheckCircle, Info, AlertCircle, AlertTriangle, X
 import { format } from "date-fns";
 
 export default function AdminNotifications() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [partnerFilter, setPartnerFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [readFilter, setReadFilter] = useState("all");
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin;
+  const isSuperAdmin = role === 'superadmin';
+  const isAdmin = role === 'admin' || isSuperAdmin;
 
   // Fetch all notifications
   const { data: allNotifications = [], isLoading } = useQuery({
@@ -35,10 +36,13 @@ export default function AdminNotifications() {
     enabled: isAdmin,
   });
 
-  // Fetch partners for filter
+  // Fetch partners for filter (superadmin sees all, admin sees only assigned)
   const { data: allPartners = [] } = useQuery({
-    queryKey: ['allPartners'],
-    queryFn: async () => partnersService.getAll(),
+    queryKey: ['allPartners', role, user?.id],
+    queryFn: async () => partnersService.getAll({
+      role: role || undefined,
+      currentUserAuthId: user?.id || undefined,
+    }),
     enabled: isAdmin,
   });
 

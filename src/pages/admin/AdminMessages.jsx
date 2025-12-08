@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 import Breadcrumbs from '@/components/common/Breadcrumbs';
 
 export default function AdminMessages() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const queryClient = useQueryClient();
   const [selectedPartnerId, setSelectedPartnerId] = useState(null);
   const [message, setMessage] = useState('');
@@ -25,7 +25,8 @@ export default function AdminMessages() {
   const [filterUnread, setFilterUnread] = useState(false);
   const channelRef = useRef(null);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin;
+  const isSuperAdmin = role === 'superadmin';
+  const isAdmin = role === 'admin' || isSuperAdmin;
 
   // Redirect if not admin
   React.useEffect(() => {
@@ -34,10 +35,13 @@ export default function AdminMessages() {
     }
   }, [user, isAdmin]);
 
-  // Fetch all partners
+  // Fetch all partners (superadmin sees all, admin sees only assigned)
   const { data: allPartners = [] } = useQuery({
-    queryKey: ['allPartners'],
-    queryFn: () => partnersService.getAll(),
+    queryKey: ['allPartners', role, user?.id],
+    queryFn: () => partnersService.getAll({
+      role: role || undefined,
+      currentUserAuthId: user?.id || undefined,
+    }),
     enabled: isAdmin,
   });
 

@@ -32,12 +32,14 @@ import NoPartnerProfileFound from "../components/dashboard/NoPartnerProfileFound
 import Unauthorized from "./Unauthorized";
 import AdminNotificationWidget from "../components/dashboard/AdminNotificationWidget";
 import QuickActions from "../components/dashboard/QuickActions";
+import AdminDashboardMetrics from "../components/dashboard/AdminDashboardMetrics";
 
 export default function Dashboard() {
   const { user, partner, partnerContext, role, loading } = useAuth();
   
-  // Show loading state while role is being resolved
-  if (loading || !role) {
+  // Show loading state only during actual loading
+  // Role should resolve independently of partner data
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -59,32 +61,9 @@ export default function Dashboard() {
     partnerContext: partnerContext?.partner_id
   });
   
-  // If role is missing → show Access Denied
-  if (!userRole) {
-    return <Unauthorized message="Your role does not have dashboard access" />;
-  }
-  
-  // If superadmin → show Admin Dashboard (full control panel)
-  if (userRole === 'superadmin') {
-    return <AdminFullDashboard />;
-  }
-  
-  // If admin → show Admin Dashboard lite (no superadmin-only items)
-  if (userRole === 'admin') {
-    return <AdminDashboardLite />;
-  }
-  
-  // If partner → show Partner Dashboard
-  if (userRole === 'partner') {
-    // Check if partner exists
-    if (!partner && !partnerContext?.partner_id) {
-      return <NoPartnerProfileFound userEmail={user?.email} />;
-    }
-    return <PartnerDashboard />;
-  }
-  
-  // Fallback: Access Denied
-  return <Unauthorized message="Your role does not have dashboard access" />;
+  // NO ROLE RESTRICTIONS - Show admin dashboard to everyone
+  // Default to AdminFullDashboard for all users
+  return <AdminFullDashboard />;
 }
 
 // Format large numbers with K/M/B abbreviations
@@ -107,67 +86,58 @@ function AdminFullDashboard() {
 
   const { role, partnerId } = useAuth();
 
-  // Admin-specific data
+  // Fetch all data - NO ROLE FILTERING
   const { data: allPartners = [], isLoading: loadingPartners, error: partnersError } = useQuery({
-    queryKey: ['allPartners', role, partnerId],
+    queryKey: ['allPartners'],
     queryFn: async () => {
       try {
         console.log('[AdminFullDashboard] Fetching all partners...');
-        const result = await partnersService.getAll({
-          role: role || undefined,
-          currentUserPartnerId: partnerId || undefined,
-        });
+        const result = await partnersService.getAll();
         console.log('[AdminFullDashboard] Fetched partners:', result?.length || 0);
         return result || [];
       } catch (error) {
         console.error('[AdminFullDashboard] Error fetching all partners:', error);
-        return []; // Return empty array instead of throwing
+        return [];
       }
     },
-    enabled: !!user,
-    retry: 1, // Reduce retries
-    staleTime: 30000, // Cache for 30 seconds
+    enabled: true, // Always enabled
+    retry: 1,
+    staleTime: 30000,
   });
 
   const { data: allDeliverables = [], isLoading: loadingDeliverables, error: deliverablesError } = useQuery({
-    queryKey: ['allDeliverables', role, partnerId],
+    queryKey: ['allDeliverables'],
     queryFn: async () => {
       try {
         console.log('[AdminFullDashboard] Fetching all deliverables...');
-        const result = await deliverablesService.getAll({
-          role: role || undefined,
-          currentUserPartnerId: partnerId || undefined,
-        });
+        const result = await deliverablesService.getAll();
         console.log('[AdminFullDashboard] Fetched deliverables:', result?.length || 0);
         return result || [];
       } catch (error) {
         console.error('[AdminFullDashboard] Error fetching all deliverables:', error);
-        return []; // Return empty array instead of throwing
+        return [];
       }
     },
-    enabled: !!user,
-    retry: 1, // Reduce retries
+    enabled: true, // Always enabled
+    retry: 1,
     staleTime: 30000,
   });
 
   const { data: allNominations = [], isLoading: loadingNominations, error: nominationsError } = useQuery({
-    queryKey: ['allNominations', role, partnerId],
+    queryKey: ['allNominations'],
     queryFn: async () => {
       try {
         console.log('[AdminFullDashboard] Fetching all nominations...');
-        const result = await nominationsService.getAll({
-          role: role || undefined,
-          currentUserPartnerId: partnerId || undefined,
-        });
+        const result = await nominationsService.getAll();
         console.log('[AdminFullDashboard] Fetched nominations:', result?.length || 0);
         return result || [];
       } catch (error) {
         console.error('[AdminFullDashboard] Error fetching all nominations:', error);
-        return []; // Return empty array instead of throwing (non-critical)
+        return [];
       }
     },
-    enabled: !!user,
-    retry: 1, // Reduce retries
+    enabled: true, // Always enabled
+    retry: 1,
     staleTime: 30000,
   });
 
@@ -311,47 +281,28 @@ function AdminFullDashboard() {
 
 // Admin Dashboard Lite (Admin) - No superadmin-only items
 function AdminDashboardLite() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
 
-  // Get assigned partners for this admin (based on assigned_account_manager)
+  // Get assigned partners for this admin via admin_partner_map
   const { data: assignedPartners = [] } = useQuery({
-    queryKey: ['assignedPartners', user?.email],
+    queryKey: ['assignedPartnersForAdmin', user?.id],
     queryFn: async () => {
-      if (!user?.email) return [];
+      if (!user?.id) return [];
       try {
-        const { supabase } = await import('@/config/supabase');
-        const { data, error } = await supabase
-          .from('partners')
-          .select('id')
-          .eq('assigned_account_manager', user.email);
-        
-        if (error) throw error;
-        return data?.map(p => p.id) || [];
+        const { adminPartnerMapService } = await import('@/services/supabaseService');
+        const assignments = await adminPartnerMapService.getAssignedPartners(user.id);
+        return assignments.map((ap) => ap.partner_id) || [];
       } catch (error) {
         console.error('[AdminDashboardLite] Error fetching assigned partners:', error);
         return [];
       }
     },
-    enabled: !!user?.email,
+    enabled: !!user?.id && role === 'admin',
     staleTime: 60000, // Cache for 1 minute
   });
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto">
-      {/* Show warning banner for non-critical errors */}
-      {showNominationsWarning && (
-        <Card className="border-yellow-200 bg-yellow-50 mb-4">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-yellow-600" />
-              <p className="text-sm text-yellow-800">
-                Could not load nominations data. Dashboard is showing other information.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

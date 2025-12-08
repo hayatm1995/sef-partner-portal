@@ -98,7 +98,9 @@ import EmailTest from "./EmailTest";
 import Contracts from "./Contracts";
 
 import AdminPartners from "./admin/AdminPartners";
+import AdminPartnersAssignment from "./admin/AdminPartnersAssignment";
 import EditPartner from "./admin/EditPartner";
+import AddPartner from "./admin/AddPartner";
 import AdminDeliverables from "./admin/AdminDeliverables";
 import AdminSubmissions from "./admin/AdminSubmissions";
 import AdminMessages from "./admin/AdminMessages";
@@ -113,12 +115,17 @@ import ReviewNominations from "./admin/ReviewNominations";
 import Login from "./Login";
 import Landing from "./Landing";
 import SetPassword from "./auth/SetPassword";
+import DevModeSelector from "./DevModeSelector";
 import AuthGuard from "@/components/auth/AuthGuard";
 import RoleGuard from "@/components/auth/RoleGuard";
 import RouteGuard from "@/components/auth/RouteGuard";
 import { BrowserRouter as Router, Route, Routes, useLocation, Navigate } from 'react-router-dom';
 import { SUPERADMIN } from "@/constants/users";
 import NoPartnerProfileFound from "@/components/dashboard/NoPartnerProfileFound";
+import { DEV_MODE } from "@/config/devMode";
+import { useAppRole } from "@/hooks/useAppRole";
+import { useDevRole } from "@/contexts/DevRoleContext";
+import DemoRoutes from "@/demo/DemoRoutes";
 
 const PAGES = {
     
@@ -298,59 +305,80 @@ function isPartner(user) {
     return user.role === 'partner' || user.is_partner === true;
 }
 
+// Dev Mode Route Guard - redirects to /dev if no role selected
+function DevModeRouteGuard({ children }) {
+    const { role } = useDevRole();
+    if (DEV_MODE && role === "unknown") {
+        return <Navigate to="/dev" replace />;
+    }
+    return <>{children}</>;
+}
+
 // Create a wrapper component that uses useLocation inside the Router context
 function PagesContent() {
     const location = useLocation();
     const currentPage = _getCurrentPage(location.pathname);
     const { user, session, role, loading } = useAuth();
     
-    // CRITICAL: Show loading state until role is resolved
-    // Don't render protected routes until we know the user's role
-    if (loading || (session && !role)) {
-        return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-gray-600">Loading...</p>
-                </div>
-            </div>
-        );
-    }
-    
-    // Show public pages if not authenticated
-    if (!session && !user) {
+    // Demo Mode routes - always accessible, no auth required
+    // This route is checked first to ensure /demo is always reachable
+    if (location.pathname.startsWith('/demo')) {
         return (
             <Routes>
-                <Route path="/" element={<Landing />} />
-                <Route path="/Login" element={<Login />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
+                <Route path="/demo/*" element={<DemoRoutes />} />
             </Routes>
         );
     }
     
-    // STRICT ROLE CHECKING - No fallback behavior
-    // Use resolved role from context (already checked against database)
-    const userRole = role;
-    
-    // Validate role is one of our allowed values (superadmin, admin, or partner)
-    if (!userRole || !['superadmin', 'admin', 'partner'].includes(userRole)) {
-        console.error('[PagesContent] Invalid role:', userRole);
+    // In Dev Mode, show dev selector at /dev and redirect / to /dev
+    if (DEV_MODE) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-gray-50 to-stone-50">
-                <NoPartnerProfileFound userEmail={user?.email} />
-            </div>
+            <Routes>
+                <Route path="/dev" element={<DevModeSelector />} />
+                <Route path="/" element={<Navigate to="/dev" replace />} />
+                <Route path="/Login" element={<Navigate to="/dev" replace />} />
+                <Route path="*" element={
+                    <DevModeRouteGuard>
+                        <PagesContentAuthenticated />
+                    </DevModeRouteGuard>
+                } />
+            </Routes>
         );
     }
     
-    // Strict role checks - no fallback
+    // TEMPORARY: Always show landing page or authenticated content
+    // No auth blocking - allow all routes
+    return (
+        <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/Login" element={<Landing />} />
+            <Route path="*" element={<PagesContentAuthenticated />} />
+        </Routes>
+    );
+}
+
+// Authenticated content (used in both dev and production mode)
+function PagesContentAuthenticated() {
+    const location = useLocation();
+    const currentPage = _getCurrentPage(location.pathname);
+    const { role: appRole } = useAppRole();
+    
+    // TEMPORARY: Check if role is selected, if not redirect to landing
+    // This allows role selection from landing page
+    if (!appRole || appRole === 'unknown') {
+        // Allow landing page and demo routes
+        if (location.pathname === '/' || location.pathname.startsWith('/demo')) {
+            return null; // Let the route render
+        }
+        // Redirect to landing for role selection
+        return <Navigate to="/" replace />;
+    }
+    
+    // Use selected role from landing page
+    const userRole = appRole;
     const userIsSuperadmin = userRole === 'superadmin';
     const userIsAdmin = userRole === 'admin' || userIsSuperadmin;
     const userIsPartner = userRole === 'partner';
-    
-    // If role is invalid, redirect to login
-    if (!userIsSuperadmin && !userIsAdmin && !userIsPartner) {
-        return <Navigate to="/Login" replace />;
-    }
     
     return (
         <AuthGuard>
@@ -360,168 +388,103 @@ function PagesContent() {
                         {/* Root route - redirect based on role */}
                         <Route path="/" element={
                             userIsSuperadmin 
-                                ? <Navigate to="/superadmin/dashboard" replace />
+                                ? <Navigate to="/Dashboard" replace />
                                 : userIsAdmin
-                                ? <Navigate to="/admin/dashboard" replace /> 
+                                ? <Navigate to="/Dashboard" replace /> 
                                 : userIsPartner
                                 ? <Navigate to="/PartnerHub" replace />
                                 : <Landing />
                         } />
                         <Route path="/Unauthorized" element={<Unauthorized />} />
                         
-                        {/* Partner Routes - ONLY accessible to partners */}
-                        {userIsPartner && (
-                        <>
-                            {/* Explicit Partner Routes */}
-                            <Route path="/partner/dashboard" element={<Dashboard />} />
-                            <Route path="/partner/profile" element={<Profile />} />
-                            <Route path="/partner/deliverables" element={<PartnerDeliverables />} />
-                            
-                            {/* Legacy routes - redirect to new partner routes */}
-                            <Route path="/Dashboard" element={<Navigate to="/PartnerHub" replace />} />
-                            
-                            {/* Legacy/Shared Routes */}
-                            {/* Partner-only routes - only accessible when NOT viewing as admin */}
-                            {userIsPartner && !userIsSuperadmin && (
-                                <>
-                                    <Route path="/Deliverables" element={<PartnerDeliverables />} />
-                                    <Route path="/deliverables" element={<PartnerDeliverables />} />
-                                </>
-                            )}
-                            
-                            <Route path="/Nominations" element={<Nominations />} />
-                            <Route path="/PartnerHub" element={<PartnerHub />} />
-                            <Route path="/ExhibitorStand" element={<ExhibitorStand />} />
-                            <Route path="/Contracts" element={<Contracts />} />
-                        </>
-                    )}
-                    
-                    {/* Shared Routes - accessible to both superadmin and partner */}
-                    {(userIsPartner || userIsSuperadmin) && (
-                        <>
-                            <Route path="/Messages" element={<Messages />} />
-                            <Route path="/support-chat" element={<PartnerMessages />} />
-                            <Route path="/Documents" element={<Documents />} />
-                            <Route path="/Training" element={<Training />} />
-                            <Route path="/Support" element={<Support />} />
-                            <Route path="/Profile" element={<Profile />} />
-                            <Route path="/ActivityLog" element={<ActivityLog />} />
-                            <Route path="/Settings" element={<Settings />} />
-                            <Route path="/Tasks" element={<Tasks />} />
-                            <Route path="/Notifications" element={<Notifications />} />
-                            <Route path="/support" element={<PartnerSupport />} />
-                            <Route path="/AccountManager" element={<AccountManager />} />
-                            <Route path="/Resources" element={<Resources />} />
-                            <Route path="/Passes" element={<Passes />} />
-                            <Route path="/Opportunities" element={<Opportunities />} />
-                            <Route path="/GettingStarted" element={<GettingStarted />} />
-                            <Route path="/Venue" element={<Venue />} />
-                            <Route path="/EventSchedule" element={<EventSchedule />} />
-                            <Route path="/Timeline" element={<Timeline />} />
-                            <Route path="/Chat" element={<Chat />} />
-                            <Route path="/ImagineLab" element={<ImagineLab />} />
-                            <Route path="/SocialMedia" element={<SocialMedia />} />
-                            <Route path="/PressKit" element={<PressKit />} />
-                            <Route path="/Benefits" element={<Benefits />} />
-                            <Route path="/MediaTracker" element={<MediaTracker />} />
-                            <Route path="/Calendar" element={<Calendar />} />
-                            <Route path="/ApprovalReview" element={<ApprovalReview />} />
-                        </>
-                    )}
-                    
-                    {/* Admin Routes - STRICT: Accessible to superadmin and admin */}
-                    {(userIsSuperadmin || userIsAdmin) && (
-                        <>
-                            {/* Admin Dashboard Route - accessible to superadmin and admin */}
-                            <Route path="/admin/dashboard" element={<Dashboard />} />
-                            
-                            {/* Redirect /admin to /admin/dashboard */}
-                            <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
-
-                            <Route path="/AdminPanel" element={
-                                <RoleGuard requireAdmin={true}>
-                                    <AdminPanel />
-                                </RoleGuard>
-                            } />
-                            <Route path="/AdminRequirements" element={
-                                <RoleGuard requireAdmin={true}>
-                                    <AdminRequirements />
-                                </RoleGuard>
-                            } />
-                            <Route path="/SuperAdminPanel" element={<SuperAdminPanelGuard />} />
-                            <Route path="/EmailInvitations" element={
-                                <RoleGuard requireAdmin={true}>
-                                    <EmailInvitations />
-                                </RoleGuard>
-                            } />
-                            <Route path="/SendEmail" element={
-                                <RoleGuard requireAdmin={true}>
-                                    <SendEmail />
-                                </RoleGuard>
-                            } />
-                            <Route path="/AdminApprovals" element={
-                                <RoleGuard requireAdmin={true}>
-                                    <AdminApprovals />
-                                </RoleGuard>
-                            } />
-                            <Route path="/AdminReminders" element={
-                                <RoleGuard requireAdmin={true}>
-                                    <AdminReminders />
-                                </RoleGuard>
-                            } />
-                            <Route path="/EmailTemplates" element={
-                                <RoleGuard requireAdmin={true}>
-                                    <EmailTemplates />
-                                </RoleGuard>
-                            } />
-                            <Route path="/EmailTest" element={
-                                <RoleGuard requireAdmin={true}>
-                                    <EmailTest />
-                                </RoleGuard>
-                            } />
-                            
-                            {/* Admin Routes - nested under /admin */}
-                            <Route path="/admin/*" element={
-                                <RoleGuard requireAdmin={true}>
-                                    <Routes>
-                                        <Route path="partners" element={<AdminPartners />} />
-                                        <Route path="partners/new" element={<EditPartner />} />
-                                        <Route path="partners/:id/edit" element={<EditPartner />} />
-                                        <Route path="operations" element={<AdminOperations />} />
-                                        <Route path="deliverables" element={<AdminDeliverables />} />
-                                        <Route path="submissions" element={<AdminSubmissions />} />
-                                        
-                                        {/* New Deliverables Review Route */}
-                                        <Route path="deliverables-review" element={<DeliverablesReview />} />
-                                        
-                                        <Route path="review-nominations" element={<ReviewNominations />} />
-                                        
-                                        <Route path="messages" element={<AdminMessages />} />
-                                        <Route path="vip-invitations" element={<VIPApprovals />} />
-                                        <Route path="booths" element={<AdminBooths />} />
-                                        <Route path="booths/:id" element={<AdminBoothDetails />} />
-                                        <Route path="control-room" element={<AdminControlRoom />} />
-                                        <Route path="notifications" element={<AdminNotifications />} />
-                                        <Route path="support" element={<AdminSupport />} />
-                                        <Route path="contracts" element={<AdminContracts />} />
-                                        <Route path="users" element={<AdminUsers />} />
-                                        <Route path="invite-partner" element={<InvitePartner />} />
-                                        <Route path="approvals" element={<Approvals />} />
-                                    </Routes>
-                                </RoleGuard>
-                            } />
-                        </>
-                    )}
-                    
-                    {/* Superadmin Routes - require superadmin role */}
-                    {userIsSuperadmin && (
+                        {/* ALL ROUTES ACCESSIBLE TO EVERYONE - NO ROLE RESTRICTIONS */}
+                        {/* Partner Routes */}
+                        <Route path="/partner/dashboard" element={<Dashboard />} />
+                        <Route path="/partner/profile" element={<Profile />} />
+                        <Route path="/partner/deliverables" element={<PartnerDeliverables />} />
+                        <Route path="/Deliverables" element={<PartnerDeliverables />} />
+                        <Route path="/deliverables" element={<PartnerDeliverables />} />
+                        <Route path="/Nominations" element={<Nominations />} />
+                        <Route path="/PartnerHub" element={<PartnerHub />} />
+                        <Route path="/ExhibitorStand" element={<ExhibitorStand />} />
+                        <Route path="/Contracts" element={<Contracts />} />
+                        
+                        {/* Shared Routes */}
+                        <Route path="/Messages" element={<Messages />} />
+                        <Route path="/support-chat" element={<PartnerMessages />} />
+                        <Route path="/Documents" element={<Documents />} />
+                        <Route path="/Training" element={<Training />} />
+                        <Route path="/Support" element={<Support />} />
+                        <Route path="/Profile" element={<Profile />} />
+                        <Route path="/ActivityLog" element={<ActivityLog />} />
+                        <Route path="/Settings" element={<Settings />} />
+                        <Route path="/Tasks" element={<Tasks />} />
+                        <Route path="/Notifications" element={<Notifications />} />
+                        <Route path="/support" element={<PartnerSupport />} />
+                        <Route path="/AccountManager" element={<AccountManager />} />
+                        <Route path="/Resources" element={<Resources />} />
+                        <Route path="/Passes" element={<Passes />} />
+                        <Route path="/Opportunities" element={<Opportunities />} />
+                        <Route path="/GettingStarted" element={<GettingStarted />} />
+                        <Route path="/Venue" element={<Venue />} />
+                        <Route path="/EventSchedule" element={<EventSchedule />} />
+                        <Route path="/Timeline" element={<Timeline />} />
+                        <Route path="/Chat" element={<Chat />} />
+                        <Route path="/ImagineLab" element={<ImagineLab />} />
+                        <Route path="/SocialMedia" element={<SocialMedia />} />
+                        <Route path="/PressKit" element={<PressKit />} />
+                        <Route path="/Benefits" element={<Benefits />} />
+                        <Route path="/MediaTracker" element={<MediaTracker />} />
+                        <Route path="/Calendar" element={<Calendar />} />
+                        <Route path="/ApprovalReview" element={<ApprovalReview />} />
+                        
+                        {/* Admin Routes - ALL ACCESSIBLE */}
+                        <Route path="/Dashboard" element={<Dashboard />} />
+                        <Route path="/admin/dashboard" element={<Dashboard />} />
+                        <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+                        <Route path="/AdminPanel" element={<AdminPanel />} />
+                        <Route path="/AdminRequirements" element={<AdminRequirements />} />
+                        <Route path="/SuperAdminPanel" element={<SuperAdminPanel />} />
+                        <Route path="/EmailInvitations" element={<EmailInvitations />} />
+                        <Route path="/SendEmail" element={<SendEmail />} />
+                        <Route path="/AdminApprovals" element={<AdminApprovals />} />
+                        <Route path="/AdminReminders" element={<AdminReminders />} />
+                        <Route path="/EmailTemplates" element={<EmailTemplates />} />
+                        <Route path="/EmailTest" element={<EmailTest />} />
+                        
+                        {/* Admin Routes - nested under /admin */}
+                        <Route path="/admin/*" element={
+                            <Routes>
+                                <Route path="partners" element={<AdminPartners />} />
+                                <Route path="partners/new" element={<AddPartner />} />
+                                <Route path="partners/:id/edit" element={<EditPartner />} />
+                                <Route path="operations" element={<AdminOperations />} />
+                                <Route path="deliverables" element={<AdminDeliverables />} />
+                                <Route path="submissions" element={<AdminSubmissions />} />
+                                <Route path="deliverables-review" element={<DeliverablesReview />} />
+                                <Route path="review-nominations" element={<ReviewNominations />} />
+                                <Route path="messages" element={<AdminMessages />} />
+                                <Route path="vip-invitations" element={<VIPApprovals />} />
+                                <Route path="booths" element={<AdminBooths />} />
+                                <Route path="booths/:id" element={<AdminBoothDetails />} />
+                                <Route path="control-room" element={<AdminControlRoom />} />
+                                <Route path="notifications" element={<AdminNotifications />} />
+                                <Route path="support" element={<AdminSupport />} />
+                                <Route path="contracts" element={<AdminContracts />} />
+                                <Route path="users" element={<AdminUsers />} />
+                                <Route path="admin-partners" element={<AdminPartnersAssignment />} />
+                                <Route path="invite-partner" element={<InvitePartner />} />
+                                <Route path="approvals" element={<Approvals />} />
+                            </Routes>
+                        } />
+                        
+                        {/* Superadmin Routes */}
                         <Route path="/superadmin/*" element={
                             <Routes>
                                 <Route path="dashboard" element={<Dashboard />} />
                                 <Route path="control-room" element={<ControlRoom />} />
                             </Routes>
                         } />
-                    )}
                     
                     <Route path="/PageNotFound" element={<PageNotFound />} />
                     <Route path="/Login" element={

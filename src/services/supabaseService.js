@@ -5,29 +5,40 @@ import { supabase } from '@/config/supabase';
 // ============================================
 
 export const partnersService = {
-  // Get all partners with role-based filtering
-  // If partnerId is provided, only returns that partner
-  // If role is 'superadmin', returns all partners
-  // If role is 'admin', returns only partners matching their partner_id
+  // Get all partners - NO ROLE FILTERING - everyone sees everything
   getAll: async (options = {}) => {
-    const { partnerId, role, currentUserPartnerId } = options;
+    const { partnerId } = options;
     
-    let query = supabase
+    console.log('[partnersService.getAll] Fetching all partners (no role filtering)');
+    
+    // If specific partnerId requested, filter by it
+    if (partnerId) {
+      const { data, error } = await supabase
+        .from('partners')
+        .select('*')
+        .eq('id', partnerId)
+        .single();
+      
+      if (error) {
+        console.error('[partnersService.getAll] Query error:', error);
+        throw error;
+      }
+      
+      return data ? [data] : [];
+    }
+    
+    // Return ALL partners - no filtering
+    const { data, error } = await supabase
       .from('partners')
       .select('*')
       .order('created_at', { ascending: false });
     
-    // If specific partnerId requested, filter by it
-    if (partnerId) {
-      query = query.eq('id', partnerId);
-    } else if (role === 'admin' && currentUserPartnerId) {
-      // Admin can only see their assigned partner
-      query = query.eq('id', currentUserPartnerId);
+    if (error) {
+      console.error('[partnersService.getAll] Query error:', error);
+      throw error;
     }
-    // If role is 'superadmin' or no role provided, return all (subject to RLS)
     
-    const { data, error } = await query;
-    if (error) throw error;
+    console.log('[partnersService.getAll] Successfully returning', data?.length || 0, 'partners');
     return data || [];
   },
 
@@ -178,9 +189,9 @@ export const partnerUsersService = {
 
   // Get all users with role-based filtering
   // If role is 'superadmin', returns all users
-  // If role is 'admin', returns only users from their assigned partner
+  // If role is 'admin', returns only users from their assigned partners (via admin_partner_map)
   getAll: async (options = {}) => {
-    const { role, currentUserPartnerId } = options;
+    const { role, currentUserAuthId } = options;
     
     let query = supabase
       .from('partner_users')
@@ -190,9 +201,27 @@ export const partnerUsersService = {
       `)
       .order('created_at', { ascending: false });
     
-    // If role is 'admin', filter by their partner_id
-    if (role === 'admin' && currentUserPartnerId) {
-      query = query.eq('partner_id', currentUserPartnerId);
+    // If role is 'admin', filter by assigned partners via admin_partner_map
+    if (role === 'admin' && currentUserAuthId) {
+      // First, get assigned partner IDs from admin_partner_map
+      const { data: assignedPartners, error: mapError } = await supabase
+        .from('admin_partner_map')
+        .select('partner_id')
+        .eq('admin_user_id', currentUserAuthId);
+      
+      if (mapError) {
+        console.error('[partnerUsersService.getAll] Error fetching assigned partners:', mapError);
+        // Fallback: return empty array if can't fetch assignments
+        return [];
+      }
+      
+      if (assignedPartners && assignedPartners.length > 0) {
+        const partnerIds = assignedPartners.map(ap => ap.partner_id);
+        query = query.in('partner_id', partnerIds);
+      } else {
+        // Admin has no assigned partners - return empty array
+        return [];
+      }
     }
     // If role is 'superadmin' or no role provided, return all (subject to RLS)
     
@@ -320,9 +349,24 @@ export const deliverablesService = {
     } else if (partnerId === null) {
       // If partnerId is explicitly null, get global deliverables (partner_id IS NULL)
       query = query.is('partner_id', null);
-    } else if (role === 'admin' && currentUserPartnerId) {
-      // Admin can only see deliverables for their assigned partner
-      query = query.eq('partner_id', currentUserPartnerId);
+    } else if (role === 'admin' && options.currentUserAuthId) {
+      // Admin can only see deliverables for their assigned partners via admin_partner_map
+      const { data: assignedPartners, error: mapError } = await supabase
+        .from('admin_partner_map')
+        .select('partner_id')
+        .eq('admin_user_id', options.currentUserAuthId);
+      
+      if (mapError) {
+        console.error('[deliverablesService.getAll] Error fetching assigned partners:', mapError);
+        return [];
+      }
+      
+      if (assignedPartners && assignedPartners.length > 0) {
+        const partnerIds = assignedPartners.map(ap => ap.partner_id);
+        query = query.in('partner_id', partnerIds);
+      } else {
+        return [];
+      }
     }
     // If role is 'superadmin' or no role provided, return all (subject to RLS)
 
@@ -414,13 +458,9 @@ export const deliverablesService = {
 // ============================================
 
 export const nominationsService = {
-  // Get all nominations with role-based filtering
-  // If partnerId is provided, only returns nominations for that partner
-  // If role is 'superadmin', returns all nominations
-  // If role is 'admin', returns only nominations for their assigned partner
-  // Partners automatically exclude 'hidden' nominations
+  // Get all nominations - NO ROLE FILTERING
   getAll: async (options = {}) => {
-    const { partnerId, role, currentUserPartnerId, includeHidden = false } = typeof options === 'string' 
+    const { partnerId } = typeof options === 'string' 
       ? { partnerId: options } // Backward compatibility: if string, treat as partnerId
       : options;
     
@@ -435,23 +475,12 @@ export const nominationsService = {
       `)
       .order('created_at', { ascending: false });
 
-    // If specific partnerId requested, filter by it
+    // If specific partnerId requested, filter by it (optional filtering)
     if (partnerId) {
       query = query.eq('partner_id', partnerId);
-      // Partners should not see hidden nominations
-      if (!includeHidden && role !== 'admin' && role !== 'superadmin') {
-        query = query.neq('status', 'hidden');
-      }
-    } else if (role === 'admin' && currentUserPartnerId) {
-      // Admin can only see nominations for their assigned partner
-      query = query.eq('partner_id', currentUserPartnerId);
-    }
-    // If role is 'superadmin' or no role provided, return all (subject to RLS)
-    // But exclude hidden for non-admin roles
-    if (!includeHidden && role !== 'admin' && role !== 'superadmin') {
-      query = query.neq('status', 'hidden');
     }
 
+    // Return all nominations - no role checks
     const { data, error } = await query;
     if (error) {
       console.error('[nominationsService] Error fetching nominations:', error);
@@ -1109,6 +1138,119 @@ export const boothDiscussionsService = {
 };
 
 // ============================================
+// ADMIN PARTNER MAP (Admin Assignment System)
+// ============================================
+
+export const adminPartnerMapService = {
+  // Get all assigned partners for an admin
+  getAssignedPartners: async (adminUserId) => {
+    const { data, error } = await supabase
+      .from('admin_partner_map')
+      .select(`
+        *,
+        partners (*)
+      `)
+      .eq('admin_user_id', adminUserId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data || [];
+  },
+
+  // Get all admins assigned to a partner
+  getAssignedAdmins: async (partnerId) => {
+    const { data, error } = await supabase
+      .from('admin_partner_map')
+      .select(`
+        *,
+        partner_users!admin_partner_map_admin_user_id_fkey (*)
+      `)
+      .eq('partner_id', partnerId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data || [];
+  },
+
+  // Assign partners to an admin (replaces existing assignments)
+  assignPartners: async (adminUserId, partnerIds) => {
+    // First, delete existing assignments
+    const { error: deleteError } = await supabase
+      .from('admin_partner_map')
+      .delete()
+      .eq('admin_user_id', adminUserId);
+    
+    if (deleteError) throw deleteError;
+    
+    // If no partner IDs provided, just return (all assignments removed)
+    if (!partnerIds || partnerIds.length === 0) {
+      return [];
+    }
+    
+    // Insert new assignments
+    const assignments = partnerIds.map(partnerId => ({
+      admin_user_id: adminUserId,
+      partner_id: partnerId,
+    }));
+    
+    const { data, error } = await supabase
+      .from('admin_partner_map')
+      .insert(assignments)
+      .select(`
+        *,
+        partners (*)
+      `);
+    
+    if (error) throw error;
+    return data || [];
+  },
+
+  // Add a single partner assignment
+  addAssignment: async (adminUserId, partnerId) => {
+    const { data, error } = await supabase
+      .from('admin_partner_map')
+      .insert({
+        admin_user_id: adminUserId,
+        partner_id: partnerId,
+      })
+      .select(`
+        *,
+        partners (*)
+      `)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Remove a single partner assignment
+  removeAssignment: async (adminUserId, partnerId) => {
+    const { error } = await supabase
+      .from('admin_partner_map')
+      .delete()
+      .eq('admin_user_id', adminUserId)
+      .eq('partner_id', partnerId);
+    
+    if (error) throw error;
+  },
+
+  // Get all admin assignments (superadmin only)
+  getAll: async () => {
+    const { data, error } = await supabase
+      .from('admin_partner_map')
+      .select(`
+        *,
+        partners (*),
+        partner_users!admin_partner_map_admin_user_id_fkey (*)
+      `)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data || [];
+  },
+};
+
+// ============================================
 // PARTNER MESSAGES
 // ============================================
 
@@ -1652,4 +1794,5 @@ export const partnerFeaturesService = {
     return data;
   },
 };
+
 

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAppRole } from "@/hooks/useAppRole";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -59,7 +60,8 @@ import PartnerHubHomepage from "../components/partnerhub/PartnerHubHomepage";
 export default function PartnerHub() {
   const [activeTab, setActiveTab] = useState("home");
   const location = useLocation();
-  const { user, partner, role, partnerId, loading: authLoading } = useAuth();
+  const { user, partner, partnerId, loading: authLoading } = useAuth();
+  const { role, partnerId: appRolePartnerId } = useAppRole();
 
   const urlParams = new URLSearchParams(location.search);
   const viewAsPartnerId = urlParams.get('viewAs');
@@ -103,20 +105,57 @@ export default function PartnerHub() {
         return null;
       }
     },
-    enabled: !!user && (!!user.id || !!user.email) && !viewAsPartnerId && role === 'partner',
+    enabled: !!user && role === "partner",
     retry: 1,
   });
 
-  // Determine current partner ID
-  const resolvedPartnerId = viewAsPartnerId || partnerId || partnerUserData?.partner_id || partner?.id;
-  const currentPartnerId = resolvedPartnerId;
+  // Determine current partner ID with fallback logic
+  // In Dev Mode, use appRolePartnerId first
+  const currentPartnerId =
+    (DEV_MODE ? appRolePartnerId : null) ||
+    partnerId ||
+    partnerUserData?.partner_id ||
+    viewAsPartnerId ||
+    partner?.id ||
+    null;
   
   // For VIP section, we'll pass partner email from user context
   const effectivePartnerEmail = user?.email || partnerUserData?.email || '';
   const isAdminGlobalView = (role === 'admin' || role === 'superadmin') && !viewAsPartnerId;
 
-  // Show loading state while fetching partner data
-  const isLoading = authLoading || (role === 'partner' && !currentPartnerId && loadingPartnerUser);
+  // In Dev Mode, show message if role/partner not set
+  if (DEV_MODE) {
+    if (role !== "partner") {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <Card className="max-w-md">
+            <CardContent className="p-8 text-center">
+              <p className="text-lg font-semibold mb-2">Dev Mode: Switch to Partner Role</p>
+              <p className="text-gray-600 mb-4">Go to /dev and select Partner role to view this page.</p>
+              <Button onClick={() => window.location.href = '/dev'}>Go to Dev Mode Selector</Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+    if (!currentPartnerId) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <Card className="max-w-md">
+            <CardContent className="p-8 text-center">
+              <p className="text-lg font-semibold mb-2">Dev Mode: No Partner Selected</p>
+              <p className="text-gray-600 mb-4">Go back to /dev and choose a partner.</p>
+              <Button onClick={() => window.location.href = '/dev'}>Go to Dev Mode Selector</Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+  }
+
+  // Show loading state only during actual loading
+  // Role should resolve independently of partner data
+  const isLoading = !DEV_MODE && (authLoading || (role === "partner" && !currentPartnerId && loadingPartnerUser));
 
   // Fetch partner data for allocations
   const { data: currentPartner, isLoading: loadingPartner } = useQuery({
@@ -137,7 +176,7 @@ export default function PartnerHub() {
     initialData: partner || partnerUserData?.partners || null,
   });
 
-  // Show loading state
+  // Show loading state only during actual loading
   if (isLoading || loadingPartner) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-gray-50 to-stone-50">
@@ -150,14 +189,14 @@ export default function PartnerHub() {
   }
 
   // Show error if partner not found (for actual partners, not admins)
-  if (role === 'partner' && !currentPartnerId && !isAdminGlobalView) {
+  if (role === "partner" && !currentPartnerId && !isAdminGlobalView) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-gray-50 to-stone-50">
         <div className="max-w-md mx-auto p-8">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-            <h3 className="text-lg font-semibold text-red-800 mb-2">Partner Profile Not Found</h3>
+            <h3 className="text-lg font-semibold text-red-800 mb-2">Partner Account Not Linked</h3>
             <p className="text-red-600 mb-4">
-              Your account is not associated with a partner profile. Please contact your administrator.
+              Partner account not linked yet. Please contact support.
             </p>
             <p className="text-sm text-red-500">Email: {user?.email}</p>
           </div>

@@ -122,9 +122,12 @@ export default function EditPartner() {
 
   // Fetch all admin users for account manager dropdown
   const { data: adminUsers = [] } = useQuery({
-    queryKey: ['adminUsers'],
+    queryKey: ['adminUsers', role],
     queryFn: async () => {
-      const allPartners = await partnersService.getAll();
+      const allPartners = await partnersService.getAll({
+        role: role || undefined,
+        currentUserAuthId: user?.id || undefined,
+      });
       const allUsers = [];
       for (const p of allPartners) {
         const users = await partnerUsersService.getByPartnerId(p.id);

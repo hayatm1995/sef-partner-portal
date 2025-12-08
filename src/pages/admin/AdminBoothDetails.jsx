@@ -24,7 +24,7 @@ import BoothChat from "@/components/ExhibitorStand/BoothChat";
 export default function AdminBoothDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const queryClient = useQueryClient();
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [assignUpdating, setAssignUpdating] = useState(false);
@@ -32,7 +32,8 @@ export default function AdminBoothDetails() {
   const [allowOverride, setAllowOverride] = useState(false);
 
   // Check if user is admin
-  const isAdmin = user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin;
+  const isSuperAdmin = role === 'superadmin';
+  const isAdmin = role === 'admin' || isSuperAdmin;
 
   // Redirect if not admin
   React.useEffect(() => {
@@ -63,10 +64,13 @@ export default function AdminBoothDetails() {
     enabled: isAdmin,
   });
 
-  // Fetch partners list
+  // Fetch partners list (superadmin sees all, admin sees only assigned)
   const { data: partners = [] } = useQuery({
-    queryKey: ['adminPartnersForBoothDetail'],
-    queryFn: () => partnersService.getAll(),
+    queryKey: ['adminPartnersForBoothDetail', role, user?.id],
+    queryFn: () => partnersService.getAll({
+      role: role || undefined,
+      currentUserAuthId: user?.id || undefined,
+    }),
     enabled: isAdmin,
   });
 

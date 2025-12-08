@@ -37,7 +37,7 @@ import VIPInvitationStatusManager from "../components/admin/VIPInvitationStatusM
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const queryClient = useQueryClient();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const isAdmin = role === 'admin' || role === 'superadmin';
 
   const { partnerId } = useAuth();
@@ -49,7 +49,7 @@ export default function AdminPanel() {
       try {
         const result = await partnerUsersService.getAll({
           role: role || undefined,
-          currentUserPartnerId: partnerId || undefined,
+          currentUserAuthId: user?.id || undefined,
         });
         return result || [];
       } catch (error) {
@@ -68,7 +68,7 @@ export default function AdminPanel() {
       try {
         const result = await partnersService.getAll({
           role: role || undefined,
-          currentUserPartnerId: partnerId || undefined,
+          currentUserAuthId: user?.id || undefined,
         });
         return result || [];
       } catch (error) {
@@ -100,7 +100,7 @@ export default function AdminPanel() {
       try {
         const result = await deliverablesService.getAll({
           role: role || undefined,
-          currentUserPartnerId: partnerId || undefined,
+          currentUserAuthId: user?.id || undefined,
         });
         return result || [];
       } catch (error) {
@@ -118,7 +118,7 @@ export default function AdminPanel() {
       try {
         const result = await nominationsService.getAll({
           role: role || undefined,
-          currentUserPartnerId: partnerId || undefined,
+          currentUserAuthId: user?.id || undefined,
         });
         return result || [];
       } catch (error) {

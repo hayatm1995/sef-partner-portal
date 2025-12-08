@@ -23,12 +23,19 @@ export default function DeliverablesSection() {
   const navigate = useNavigate();
 
   const getStatusConfig = (status) => {
+    const normalizedStatus = status?.toLowerCase();
     const configs = {
       pending: {
         color: "bg-yellow-100 text-yellow-800 border-yellow-200",
         icon: Clock,
         label: "Pending Review",
         badge: "🟡 Pending"
+      },
+      submitted: {
+        color: "bg-blue-100 text-blue-800 border-blue-200",
+        icon: Clock,
+        label: "Submitted",
+        badge: "🔵 Submitted"
       },
       approved: {
         color: "bg-green-100 text-green-800 border-green-200",
@@ -41,9 +48,21 @@ export default function DeliverablesSection() {
         icon: XCircle,
         label: "Rejected",
         badge: "🔴 Rejected"
+      },
+      revision_required: {
+        color: "bg-orange-100 text-orange-800 border-orange-200",
+        icon: AlertCircle,
+        label: "Revision Required",
+        badge: "🟠 Needs Changes"
+      },
+      'revision needed': {
+        color: "bg-orange-100 text-orange-800 border-orange-200",
+        icon: AlertCircle,
+        label: "Revision Required",
+        badge: "🟠 Needs Changes"
       }
     };
-    return configs[status] || null;
+    return configs[normalizedStatus] || null;
   };
 
   if (isLoading) {

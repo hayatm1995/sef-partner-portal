@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAppRole } from "@/hooks/useAppRole";
+import { DEV_MODE } from "@/config/devMode";
 import { deliverablesService, partnerSubmissionsService, partnersService } from "@/services/supabaseService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,17 +16,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, Clock, CheckCircle, XCircle, Loader2, FileText, Eye, AlertCircle } from "lucide-react";
+import { Search, Clock, CheckCircle, XCircle, Loader2, FileText, Eye, AlertCircle, Filter } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { format } from "date-fns";
 import DeliverableReviewDrawer from "@/components/deliverables/DeliverableReviewDrawer";
 import Breadcrumbs from "@/components/common/Breadcrumbs";
 
 export default function AdminDeliverables() {
   const { user } = useAuth();
+  const { role } = useAppRole();
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [selectedDeliverable, setSelectedDeliverable] = useState(null);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'sef_admin' || user?.is_super_admin;
+  const isSuperAdmin = role === 'superadmin';
+  const isAdmin = role === 'admin' || isSuperAdmin;
 
   // Redirect if not admin
   React.useEffect(() => {
@@ -35,8 +47,11 @@ export default function AdminDeliverables() {
 
   // Fetch all deliverables
   const { data: allDeliverables = [], isLoading } = useQuery({
-    queryKey: ['allDeliverables'],
-    queryFn: async () => deliverablesService.getAll(),
+    queryKey: ['allDeliverables', role, user?.id],
+    queryFn: async () => deliverablesService.getAll({
+      role: role || undefined,
+      currentUserAuthId: user?.id || undefined,
+    }),
     enabled: isAdmin,
   });
 
@@ -54,10 +69,13 @@ export default function AdminDeliverables() {
     enabled: isAdmin,
   });
 
-  // Fetch all partners
+  // Fetch all partners (superadmin sees all, admin sees only assigned)
   const { data: allPartners = [] } = useQuery({
-    queryKey: ['allPartners'],
-    queryFn: async () => partnersService.getAll(),
+    queryKey: ['allPartners', role, user?.id],
+    queryFn: async () => partnersService.getAll({
+      role: role || undefined,
+      currentUserAuthId: user?.id || undefined,
+    }),
     enabled: isAdmin,
   });
 
@@ -87,6 +105,18 @@ export default function AdminDeliverables() {
   // Filter deliverables
   const filteredDeliverables = useMemo(() => {
     let filtered = allDeliverables;
+
+    // Filter by status
+    if (statusFilter !== "all") {
+      filtered = filtered.filter(d => {
+        const submission = submissionsMap[d.id];
+        const submissionStatus = submission?.status?.toLowerCase() || 'not_submitted';
+        if (statusFilter === 'not_submitted') {
+          return !submission;
+        }
+        return submissionStatus === statusFilter.toLowerCase();
+      });
+    }
 
     // Filter by search
     if (searchQuery) {
@@ -123,15 +153,19 @@ export default function AdminDeliverables() {
       
       return new Date(b.created_at) - new Date(a.created_at);
     });
-  }, [allDeliverables, searchQuery, submissionsMap, partnerMap]);
+  }, [allDeliverables, searchQuery, statusFilter, submissionsMap, partnerMap]);
 
   const getStatusBadge = (status) => {
+    const normalizedStatus = status?.toLowerCase();
     const configs = {
       pending: { className: 'bg-yellow-100 text-yellow-800', label: 'Pending', icon: Clock },
+      submitted: { className: 'bg-blue-100 text-blue-800', label: 'Submitted', icon: Clock },
       approved: { className: 'bg-green-100 text-green-800', label: 'Approved', icon: CheckCircle },
       rejected: { className: 'bg-red-100 text-red-800', label: 'Rejected', icon: XCircle },
+      revision_required: { className: 'bg-orange-100 text-orange-800', label: 'Revision Required', icon: AlertCircle },
+      'revision needed': { className: 'bg-orange-100 text-orange-800', label: 'Revision Required', icon: AlertCircle },
     };
-    const config = configs[status] || { className: 'bg-gray-100 text-gray-800', label: 'No Submission', icon: FileText };
+    const config = configs[normalizedStatus] || { className: 'bg-gray-100 text-gray-800', label: 'No Submission', icon: FileText };
     const Icon = config.icon;
     
     return (
@@ -166,17 +200,36 @@ export default function AdminDeliverables() {
           <p className="text-gray-600 mt-1">Review and manage all partner deliverables</p>
         </div>
 
-        {/* Search Bar */}
+        {/* Search and Filter Bar */}
         <Card>
           <CardContent className="p-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                placeholder="Search by partner name, deliverable name, or file name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
+            <div className="flex gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  placeholder="Search by partner name, deliverable name, or file name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-gray-400" />
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="not_submitted">Not Submitted</SelectItem>
+                    <SelectItem value="pending">Pending Review</SelectItem>
+                    <SelectItem value="submitted">Submitted</SelectItem>
+                    <SelectItem value="revision_required">Revision Required</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </CardContent>
         </Card>
